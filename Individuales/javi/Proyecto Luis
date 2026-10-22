@@ -1,0 +1,120 @@
+// ==========================
+//  Proyecto Estacion Vigia
+// ==========================
+
+#include <iostream>
+#include <cstdlib>  
+#include <cstring>   
+#include <ctime>     
+using namespace std;
+
+// struct Evento: tipo de sensor, valor y marca de tiempo
+typedef struct Evento {
+    char   tipo[20];          
+    double valor;            
+    time_t marcaTiempo;      
+    struct Evento *sig;       
+} Evento;
+
+// Registrar un evento al inicio de la lista 
+void registrarEvento(Evento *&head, const char *tipo, double valor) {
+    Evento *nuevo = (Evento *)malloc(sizeof(Evento));
+    if (nuevo == NULL) {
+        cout << "Error: sin memoria.\n";
+        exit(1);
+    }
+    strncpy(nuevo->tipo, tipo, sizeof(nuevo->tipo) - 1);
+    nuevo->tipo[sizeof(nuevo->tipo) - 1] = '\0';
+    nuevo->valor = valor;
+    nuevo->marcaTiempo = time(NULL);   // marca de tiempo actual
+    nuevo->sig = head;
+    head = nuevo;
+}
+
+// Imprime un evento con su fecha y hora
+void imprimirEvento(const Evento *e) {
+    char fecha[30];
+    strftime(fecha, sizeof(fecha), "%Y-%m-%d %H:%M:%S", localtime(&e->marcaTiempo));
+    cout << "[" << fecha << "] " << e->tipo << " = " << e->valor << "\n";
+}
+
+// Recorrer la lista de eventos
+void mostrarEventos(Evento *head) {
+    if (head == NULL) {
+        cout << "No hay eventos registrados.\n";
+        return;
+    }
+    for (Evento *p = head; p != NULL; p = p->sig)
+        imprimirEvento(p);
+}
+
+// Buscar eventos de un tipo de sensor
+int buscarEventos(Evento *head, const char *tipo) {
+    int encontrados = 0;
+    for (Evento *p = head; p != NULL; p = p->sig) {
+        if (strcmp(p->tipo, tipo) == 0) {
+            imprimirEvento(p);
+            encontrados++;
+        }
+    }
+    return encontrados;
+}
+
+// Liberar todos los eventos (sin fugas)
+void liberarEventos(Evento *&head) {
+    Evento *p = head;
+    while (p != NULL) {
+        Evento *siguiente = p->sig;
+        free(p);
+        p = siguiente;
+    }
+    head = NULL;
+}
+
+int main() {
+    Evento *eventos = NULL;
+    int opcion;
+
+    do {
+        cout << "\n===== ESTACION VIGIA: LISTA DE EVENTOS =====\n";
+        cout << "1. Registrar un evento\n";
+        cout << "2. Mostrar todos los eventos\n";
+        cout << "3. Buscar eventos por tipo de sensor\n";
+        cout << "0. Salir (libera la memoria)\n";
+        cout << "Opcion: ";
+        cin >> opcion;
+
+        switch (opcion) {
+            case 1: {
+                char tipo[20];
+                double lectura;
+                cout << "Tipo de sensor (una palabra, ej. temperatura): ";
+                cin >> tipo;
+                cout << "Valor medido: ";
+                cin >> lectura;
+                registrarEvento(eventos, tipo, lectura);
+                cout << "Evento registrado.\n";
+                break;
+            }
+            case 2:
+                mostrarEventos(eventos);
+                break;
+            case 3: {
+                char tipo[20];
+                cout << "Tipo de sensor a buscar: ";
+                cin >> tipo;
+                if (buscarEventos(eventos, tipo) == 0)
+                    cout << "No hay eventos de tipo \"" << tipo << "\".\n";
+                break;
+            }
+            case 0:
+                break;
+            default:
+                cout << "Opcion no valida.\n";
+        }
+    } while (opcion != 0);
+
+    liberarEventos(eventos);
+    cout << "Memoria liberada. \n";
+    return 0;
+}
