@@ -1,0 +1,87 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+typedef struct Evento {
+    char tipoSensor[30];
+    float valor;
+    time_t marcaTiempo;
+    struct Evento *siguiente;
+} Evento;
+
+void registrarEvento(Evento **lista, const char tipo[], float valor) {
+    Evento *nuevo = (Evento *)malloc(sizeof(Evento));
+
+    if (nuevo == NULL) {
+        printf("Error al asignar memoria.\n");
+        return;
+    }
+
+    snprintf(nuevo->tipoSensor, sizeof(nuevo->tipoSensor), "%s", tipo);
+    nuevo->valor = valor;
+    nuevo->marcaTiempo = time(NULL);
+    nuevo->siguiente = NULL;
+
+    if (*lista == NULL) {
+        *lista = nuevo;
+    } else {
+        Evento *actual = *lista;
+
+        while (actual->siguiente != NULL) {
+            actual = actual->siguiente;
+        }
+
+        actual->siguiente = nuevo;
+    }
+
+    printf("Evento registrado correctamente.\n");
+}
+
+void mostrarEventos(Evento *lista) {
+    Evento *actual = lista;
+
+    printf("\n--- REGISTRO DE EVENTOS ---\n");
+
+    if (actual == NULL) {
+        printf("No hay eventos registrados.\n");
+        return;
+    }
+
+    while (actual != NULL) {
+        printf("\nSensor: %s\n", actual->tipoSensor);
+        printf("Valor: %.2f\n", actual->valor);
+
+        printf("Fecha y hora: %s",
+               ctime(&actual->marcaTiempo));
+
+        actual = actual->siguiente;
+    }
+}
+
+void liberarEventos(Evento **lista) {
+    Evento *actual;
+
+    while (*lista != NULL) {
+        actual = *lista;
+        *lista = (*lista)->siguiente;
+        free(actual);
+    }
+
+    printf("\nMemoria liberada correctamente.\n");
+}
+
+int main() {
+    Evento *listaEventos = NULL;
+
+    registrarEvento(&listaEventos, "Temperatura", 25.5);
+    registrarEvento(&listaEventos, "Distancia", 15.2);
+    registrarEvento(&listaEventos, "Humedad", 60.0);
+    registrarEvento(&listaEventos, "Temperatura", 28.7);
+
+    mostrarEventos(listaEventos);
+
+    liberarEventos(&listaEventos);
+
+    return 0;
+}
