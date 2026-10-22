@@ -1,7 +1,9 @@
 # Repostorio_clase_estructura_de_datos_estacion-vigia-equipo_los-cholos
 
 # Proyecto: Estación Vigía
+
 **Materia:** Estructura de Datos  
+
 **CRN:** 177546-26B 
 
 **Equipo N.º:** Los-cholos 
