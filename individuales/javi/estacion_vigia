@@ -2,37 +2,73 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Estructura de datos para un evento de sensor
+#define CAPACIDAD_INICIAL 2
+
+// Estructura para un evento de sensor
 typedef struct Evento {
     char tipoSensor[30];
     float valor;
     char marcaTiempo[25]; // Formato "YYYY-MM-DD HH:MM:SS"
 } Evento;
 
-// Nodo para la lista enlazada
-typedef struct NodoEvento {
-    Evento evento;
-    struct NodoEvento *sig;
-} NodoEvento;
+// Estructura para el búfer dinámico de la Estación Vigía
+typedef struct BuferVigia {
+    Evento *eventos;   // Arreglo dinámico en memoria (heap)
+    int capacidad;     // Capacidad máxima asignada actualmente
+    int total;         // Cantidad actual de eventos almacenados
+} BuferVigia;
 
-// Registra un evento en la lista enlazada
-void registrarEvento(NodoEvento **head, const char *sensor, float valor, const char *timestamp) {
-    NodoEvento *nuevo = (NodoEvento *)malloc(sizeof(NodoEvento));
-    if (nuevo == NULL) {
-        printf("Error: No se pudo asignar memoria dinámicamente.\n");
-        return;
+// Reserva la memoria inicial para el búfer
+BuferVigia* crearBufer(int capacidadInicial) {
+    BuferVigia *bufer = (BuferVigia *)malloc(sizeof(BuferVigia));
+    if (bufer == NULL) {
+        printf("Error: No se pudo asignar memoria para la estructura principal.\n");
+        return NULL;
     }
 
-    strncpy(nuevo->evento.tipoSensor, sensor, sizeof(nuevo->evento.tipoSensor) - 1);
-    nuevo->evento.tipoSensor[sizeof(nuevo->evento.tipoSensor) - 1] = '\0';
-    
-    nuevo->evento.valor = valor;
-    
-    strncpy(nuevo->evento.marcaTiempo, timestamp, sizeof(nuevo->evento.marcaTiempo) - 1);
-    nuevo->evento.marcaTiempo[sizeof(nuevo->evento.marcaTiempo) - 1] = '\0';
+    bufer->eventos = (Evento *)malloc(capacidadInicial * sizeof(Evento));
+    if (bufer->eventos == NULL) {
+        printf("Error: No se pudo asignar memoria para el arreglo de eventos.\n");
+        free(bufer);
+        return NULL;
+    }
 
-    nuevo->sig = *head;
-    *head = nuevo;
+    bufer->capacidad = capacidadInicial;
+    bufer->total = 0;
+    return bufer;
+}
+
+// Registra un evento y expande el búfer con realloc cuando se llena
+int registrarEvento(BuferVigia *bufer, const char *sensor, float valor, const char *timestamp) {
+    if (bufer == NULL || bufer->eventos == NULL) return 0;
+
+    // Redimensionamiento dinámico cuando se alcanza la capacidad máxima
+    if (bufer->total >= bufer->capacidad) {
+        int nuevaCapacidad = bufer->capacidad * 2;
+        Evento *temp = (Evento *)realloc(bufer->eventos, nuevaCapacidad * sizeof(Evento));
+        
+        if (temp == NULL) {
+            printf("Error: No se pudo redimensionar la memoria del búfer.\n");
+            return 0;
+        }
+        
+        bufer->eventos = temp;
+        bufer->capacidad = nuevaCapacidad;
+        printf(">> [Memoria] Búfer expandido dinámicamente a capacidad: %d elementos.\n", bufer->capacidad);
+    }
+
+    Evento *nuevo = &bufer->eventos[bufer->total];
+
+    strncpy(nuevo->tipoSensor, sensor, sizeof(nuevo->tipoSensor) - 1);
+    nuevo->tipoSensor[sizeof(nuevo->tipoSensor) - 1] = '\0';
+
+    nuevo->valor = valor;
+
+    strncpy(nuevo->marcaTiempo, timestamp, sizeof(nuevo->marcaTiempo) - 1);
+    nuevo->marcaTiempo[sizeof(nuevo->marcaTiempo) - 1] = '\0';
+
+    bufer->total++;
+    return 1;
 }
 
 // Corrije lecturas negativas mediante paso por referencia
@@ -43,7 +79,7 @@ void corregir(float *lectura) {
 }
 
 // Captura de datos desde consola
-void capturarEventoConsola(NodoEvento **head) {
+void capturarEventoConsola(BuferVigia *bufer) {
     char sensor[30];
     float valor;
     char timestamp[25];
@@ -51,72 +87,72 @@ void capturarEventoConsola(NodoEvento **head) {
     printf("\n--- REGISTRAR NUEVO EVENTO ---\n");
     printf("Tipo de sensor: ");
     scanf(" %29[^\n]", sensor);
-    
+
     printf("Valor medido: ");
     scanf("%f", &valor);
-    
+
     // Saneamiento de lectura si fuera negativa
     corregir(&valor);
 
     printf("Marca de tiempo (YYYY-MM-DD HH:MM:SS): ");
     scanf(" %24[^\n]", timestamp);
 
-    registrarEvento(head, sensor, valor, timestamp);
-    printf(">> Evento registrado exitosamente.\n");
+    if (registrarEvento(bufer, sensor, valor, timestamp)) {
+        printf(">> Evento registrado exitosamente.\n");
+    }
 }
 
-// Recorrido de la lista enlazada
-void imprimirEventos(NodoEvento *head) {
-    NodoEvento *p = head;
-    if (p == NULL) {
+// Recorrido del búfer dinámico
+void imprimirEventos(const BuferVigia *bufer) {
+    if (bufer == NULL || bufer->total == 0) {
         printf("\nEl historial de eventos está vacío.\n");
         return;
     }
-    
-    printf("\n=== HISTORIAL DE EVENTOS: ESTACIÓN VIGÍA ===\n");
-    while (p != NULL) {
-        printf("[%s] Sensor: %-20s | Valor: %.2f\n", 
-               p->evento.marcaTiempo, 
-               p->evento.tipoSensor, 
-               p->evento.valor);
-        p = p->sig;
+
+    printf("\n=== HISTORIAL DE EVENTOS: ESTACIÓN VIGÍA (Registros: %d | Capacidad Búfer: %d) ===\n", 
+           bufer->total, bufer->capacidad);
+
+    for (int i = 0; i < bufer->total; i++) {
+        printf("[%s] Sensor: %-20s | Valor: %.2f\n",
+               bufer->eventos[i].marcaTiempo,
+               bufer->eventos[i].tipoSensor,
+               bufer->eventos[i].valor);
     }
 }
 
 // Búsqueda y filtrado por tipo de sensor
-void buscarPorSensor(NodoEvento *head, const char *sensorBuscado) {
-    NodoEvento *p = head;
+void buscarPorSensor(const BuferVigia *bufer, const char *sensorBuscado) {
+    if (bufer == NULL || bufer->total == 0) {
+        printf("\nEl historial de eventos está vacío.\n");
+        return;
+    }
+
     int encontrados = 0;
-    
     printf("\n=== FILTRANDO POR SENSOR: %s ===\n", sensorBuscado);
-    while (p != NULL) {
-        if (strcmp(p->evento.tipoSensor, sensorBuscado) == 0) {
-            printf("[%s] Valor: %.2f\n", p->evento.marcaTiempo, p->evento.valor);
+
+    for (int i = 0; i < bufer->total; i++) {
+        if (strcmp(bufer->eventos[i].tipoSensor, sensorBuscado) == 0) {
+            printf("[%s] Valor: %.2f\n", bufer->eventos[i].marcaTiempo, bufer->eventos[i].valor);
             encontrados++;
         }
-        p = p->sig;
     }
-    
+
     if (encontrados == 0) {
         printf("No se encontraron registros para el sensor especificado.\n");
     }
 }
 
-/* 
- * CONCEPTOS SEMANA 7:
- * Cálculo de estadísticas (promedio, máximo, mínimo) utilizando punteros
- * para retornar los 3 valores por referencia a la función que la invoca.
- */
-int calcularEstadisticas(NodoEvento *head, const char *sensorBuscado, float *promedio, float *max, float *min) {
-    NodoEvento *p = head;
+// Cálculo de estadísticas (promedio, máximo, mínimo) con retorno por referencia
+int calcularEstadisticas(const BuferVigia *bufer, const char *sensorBuscado, float *promedio, float *max, float *min) {
+    if (bufer == NULL || bufer->total == 0) return 0;
+
     float suma = 0.0f;
     int contador = 0;
     int primero = 1;
 
-    while (p != NULL) {
-        // Si sensorBuscado es NULL calcula para todos; si no, filtra por nombre
-        if (sensorBuscado == NULL || strcmp(p->evento.tipoSensor, sensorBuscado) == 0) {
-            float v = p->evento.valor;
+    for (int i = 0; i < bufer->total; i++) {
+        if (sensorBuscado == NULL || strcmp(bufer->eventos[i].tipoSensor, sensorBuscado) == 0) {
+            float v = bufer->eventos[i].valor;
             suma += v;
 
             if (primero) {
@@ -129,7 +165,6 @@ int calcularEstadisticas(NodoEvento *head, const char *sensorBuscado, float *pro
             }
             contador++;
         }
-        p = p->sig;
     }
 
     if (contador > 0) {
@@ -139,33 +174,39 @@ int calcularEstadisticas(NodoEvento *head, const char *sensorBuscado, float *pro
     return contador;
 }
 
-// Liberación de memoria dinámica
-void liberarEventos(NodoEvento **head) {
-    NodoEvento *p = *head;
-    while (p != NULL) {
-        NodoEvento *aux = p;
-        p = p->sig;
-        free(aux);
+// Liberación limpia de memoria para evitar fugas y punteros colgantes
+void liberarBufer(BuferVigia **bufer) {
+    if (bufer != NULL && *bufer != NULL) {
+        if ((*bufer)->eventos != NULL) {
+            free((*bufer)->eventos);
+            (*bufer)->eventos = NULL; // Evita puntero colgante
+        }
+        free(*bufer);
+        *bufer = NULL; // Evita puntero colgante
+        printf("\nMemoria liberada correctamente.\n");
     }
-    *head = NULL;
-    printf("\nMemoria liberada correctamente.\n");
 }
 
 int main() {
-    NodoEvento *historial = NULL;
+    // 1. Inicialización con capacidad inicial pequeña (2) para probar realloc automáticamente
+    BuferVigia *historial = crearBufer(CAPACIDAD_INICIAL);
+    if (historial == NULL) {
+        return 1;
+    }
+
     int opcion = 0;
     char sensorBusqueda[30];
 
     // Registros de prueba iniciales
-    registrarEvento(&historial, "Temperatura", 24.5f, "2026-09-24 08:30:00");
-    registrarEvento(&historial, "Humedad", 65.0f, "2026-09-24 08:35:00");
-    registrarEvento(&historial, "Temperatura", 28.2f, "2026-09-24 09:00:00");
-    registrarEvento(&historial, "Presion Atmosferica", 1013.25f, "2026-09-24 08:40:00");
-    registrarEvento(&historial, "Temperatura", 21.0f, "2026-09-24 09:30:00");
+    registrarEvento(historial, "Temperatura", 24.5f, "2026-09-24 08:30:00");
+    registrarEvento(historial, "Humedad", 65.0f, "2026-09-24 08:35:00");
+    registrarEvento(historial, "Temperatura", 28.2f, "2026-09-24 09:00:00");
+    registrarEvento(historial, "Presion Atmosferica", 1013.25f, "2026-09-24 08:40:00");
+    registrarEvento(historial, "Temperatura", 21.0f, "2026-09-24 09:30:00");
 
     do {
         printf("\n====================================\n");
-        printf("    SISTEMA ESTACIÓN VIGÍA - MENU\n");
+        printf("    SISTEMA ESTACIÓN VIGÍA - MENU   \n");
         printf("====================================\n");
         printf("1. Registrar nuevo evento\n");
         printf("2. Mostrar historial completo\n");
@@ -173,7 +214,7 @@ int main() {
         printf("4. Calcular estadísticas por sensor (Punteros)\n");
         printf("5. Salir\n");
         printf("Seleccione una opción: ");
-        
+
         if (scanf("%d", &opcion) != 1) {
             while (getchar() != '\n');
             opcion = 0;
@@ -182,7 +223,7 @@ int main() {
 
         switch (opcion) {
             case 1:
-                capturarEventoConsola(&historial);
+                capturarEventoConsola(historial);
                 break;
             case 2:
                 imprimirEventos(historial);
@@ -223,7 +264,8 @@ int main() {
         }
     } while (opcion != 5);
 
-    liberarEventos(&historial);
+    // 2. Liberación limpia de memoria
+    liberarBufer(&historial);
 
     return 0;
 }
