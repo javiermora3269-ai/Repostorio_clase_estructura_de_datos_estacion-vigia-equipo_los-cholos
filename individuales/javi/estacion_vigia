@@ -2,27 +2,32 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Struct Evento que almacena los atributos requeridos
+// Estructura de datos para un evento de sensor
 typedef struct Evento {
     char tipoSensor[30];
     float valor;
     char marcaTiempo[25]; // Formato "YYYY-MM-DD HH:MM:SS"
 } Evento;
 
-// Nodo para la lista enlazada de eventos
+// Nodo para la lista enlazada
 typedef struct NodoEvento {
     Evento evento;
     struct NodoEvento *sig;
 } NodoEvento;
 
-// Agrega un evento al inicio del registro (O(1))
+/* 
+ * CONCEPTOS SEMANA 6:
+ * 1. Punteros a punteros (NodoEvento **head):
+ *    Permite modificar la dirección del puntero original en main().
+ */
 void registrarEvento(NodoEvento **head, const char *sensor, float valor, const char *timestamp) {
     NodoEvento *nuevo = (NodoEvento *)malloc(sizeof(NodoEvento));
     if (nuevo == NULL) {
-        printf("Error: No se pudo asignar memoria.\n");
+        printf("Error: No se pudo asignar memoria dinámicamente.\n");
         return;
     }
 
+    // Copia segura de cadenas de texto
     strncpy(nuevo->evento.tipoSensor, sensor, sizeof(nuevo->evento.tipoSensor) - 1);
     nuevo->evento.tipoSensor[sizeof(nuevo->evento.tipoSensor) - 1] = '\0';
     
@@ -31,11 +36,12 @@ void registrarEvento(NodoEvento **head, const char *sensor, float valor, const c
     strncpy(nuevo->evento.marcaTiempo, timestamp, sizeof(nuevo->evento.marcaTiempo) - 1);
     nuevo->evento.marcaTiempo[sizeof(nuevo->evento.marcaTiempo) - 1] = '\0';
 
+    // Insertar al inicio de la lista
     nuevo->sig = *head;
     *head = nuevo;
 }
 
-// Captura los datos desde consola y los registra en la lista
+// Captura de datos desde la consola con soporte para espacios en el sensor
 void capturarEventoConsola(NodoEvento **head) {
     char sensor[30];
     float valor;
@@ -43,35 +49,41 @@ void capturarEventoConsola(NodoEvento **head) {
 
     printf("\n--- REGISTRAR NUEVO EVENTO ---\n");
     printf("Tipo de sensor: ");
-    scanf("%29s", sensor);
+    scanf(" %29[^\n]", sensor);
+    
     printf("Valor medido: ");
     scanf("%f", &valor);
+    
     printf("Marca de tiempo (YYYY-MM-DD HH:MM:SS): ");
-    scanf(" %[^\n]", timestamp);
+    scanf(" %24[^\n]", timestamp);
 
     registrarEvento(head, sensor, valor, timestamp);
     printf(">> Evento registrado exitosamente.\n");
 }
 
-// Recorre e imprime la lista de eventos registrados
+/* 
+ * CONCEPTOS SEMANA 6:
+ * 2. Recorrido con punteros:
+ *    Se navega nodo a nodo mediante el puntero auxiliar 'p' (p = p->sig).
+ */
 void imprimirEventos(NodoEvento *head) {
     NodoEvento *p = head;
     if (p == NULL) {
-        printf("\nEl historial de eventos esta vacio.\n");
+        printf("\nEl historial de eventos está vacío.\n");
         return;
     }
     
-    printf("\n=== HISTORIAL DE EVENTOS: ESTACION VIGIA ===\n");
+    printf("\n=== HISTORIAL DE EVENTOS: ESTACIÓN VIGÍA ===\n");
     while (p != NULL) {
-        printf("[%s] Sensor: %-12s | Valor: %.2f\n", 
+        printf("[%s] Sensor: %-15s | Valor: %.2f\n", 
                p->evento.marcaTiempo, 
                p->evento.tipoSensor, 
                p->evento.valor);
-        p = p->sig;
+        p = p->sig; // Avance del puntero
     }
 }
 
-// Busca y muestra eventos según el tipo de sensor
+// Búsqueda y filtrado usando puntero de lectura
 void buscarPorSensor(NodoEvento *head, const char *sensorBuscado) {
     NodoEvento *p = head;
     int encontrados = 0;
@@ -90,7 +102,11 @@ void buscarPorSensor(NodoEvento *head, const char *sensorBuscado) {
     }
 }
 
-// Libera toda la memoria asignada a la lista
+/* 
+ * CONCEPTOS SEMANA 6:
+ * 3. Liberación de memoria con punteros a punteros (NodoEvento **head):
+ *    Libera cada nodo y asigna NULL al puntero principal de la lista.
+ */
 void liberarEventos(NodoEvento **head) {
     NodoEvento *p = *head;
     while (p != NULL) {
@@ -99,31 +115,31 @@ void liberarEventos(NodoEvento **head) {
         free(aux);
     }
     *head = NULL;
-    printf("\nMemoria del historial liberada correctamente.\n");
+    printf("\nMemoria liberada correctamente.\n");
 }
 
 int main() {
-    NodoEvento *historial = NULL;
+    NodoEvento *historial = NULL; // Puntero principal al inicio de la lista
     int opcion = 0;
     char sensorBusqueda[30];
 
-    // Registros iniciales de prueba
-    registrarEvento(&historial, "Temperatura", 24.5f, "2026-10-22 08:30:00");
-    registrarEvento(&historial, "Humedad", 65.0f, "2026-10-22 08:35:00");
-    registrarEvento(&historial, "Presion", 1013.25f, "2026-10-22 08:40:00");
+    // Registros de prueba iniciales
+    registrarEvento(&historial, "Temperatura", 24.5f, "2026-09-24 08:30:00");
+    registrarEvento(&historial, "Humedad", 65.0f, "2026-09-24 08:35:00");
+    registrarEvento(&historial, "Presion Atmosferica", 1013.25f, "2026-09-24 08:40:00");
 
     do {
         printf("\n====================================\n");
-        printf("   SISTEMA ESTACION VIGIA - MENU\n");
+        printf("   SISTEMA ESTACIÓN VIGÍA - MENU\n");
         printf("====================================\n");
         printf("1. Registrar nuevo evento\n");
         printf("2. Mostrar historial completo\n");
         printf("3. Buscar por tipo de sensor\n");
         printf("4. Salir\n");
-        printf("Seleccione una opcion: ");
+        printf("Seleccione una opción: ");
         
         if (scanf("%d", &opcion) != 1) {
-            while (getchar() != '\n'); // Limpia el buffer de entrada en caso de caracter inválido
+            while (getchar() != '\n'); // Limpia el búfer en caso de entrada inválida
             opcion = 0;
             continue;
         }
@@ -137,18 +153,18 @@ int main() {
                 break;
             case 3:
                 printf("\nIngrese el nombre del sensor a buscar: ");
-                scanf("%29s", sensorBusqueda);
+                scanf(" %29[^\n]", sensorBusqueda);
                 buscarPorSensor(historial, sensorBusqueda);
                 break;
             case 4:
                 printf("\nSaliendo del programa...\n");
                 break;
             default:
-                printf("\nOpcion no valida. Intente de nuevo.\n");
+                printf("\nOpción no válida. Intente de nuevo.\n");
         }
     } while (opcion != 4);
 
-    // Liberar memoria dinámica antes de finalizar
+    // Liberación de memoria dinámica
     liberarEventos(&historial);
 
     return 0;
