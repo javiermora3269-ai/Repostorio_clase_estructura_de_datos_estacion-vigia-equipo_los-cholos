@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #define UMBRAL_DEFECTO 25.0f // Umbral predeterminado para registro de eventos
+#define TAM_BUFER 5          // Tamano fijo del bufer circular para sensores
 
 
 // FASE 2: ESTRUCTURAS Y FUNCIONES PARA EL HISTORIAL DE EVENTOS (LISTA DOBLE)
@@ -17,12 +19,12 @@ typedef struct NodoEvento {
     struct NodoEvento *sig; // Puntero al nodo siguiente
 } NodoEvento;
 
-// Estructura de control para la Lista Doblemente Enlazada de la Estación Vigía
+// Estructura de control para la Lista Doblemente Enlazada de la Estacion Vigia
 typedef struct ListaVigia {
     NodoEvento *cabeza; // Primer elemento
-    NodoEvento *cola;   // Último elemento
+    NodoEvento *cola;   // Ultimo elemento
     int total;          // Cantidad actual de eventos almacenados
-    float umbral;       // Umbral límite para disparo de registro
+    float umbral;       // Umbral limite para disparo de registro
 } ListaVigia;
 
 // Crea e inicializa la lista doblemente enlazada
@@ -44,7 +46,7 @@ ListaVigia* crearLista(float umbralInicial) {
 int registrarEventoConUmbral(ListaVigia *lista, const char *sensor, float valor, const char *timestamp) {
     if (lista == NULL) return 0;
 
-    // Validación de cruce de umbral
+    // Validacion de cruce de umbral
     if (valor < lista->umbral) {
         printf(">> [OMITIDO] El valor %.2f del sensor '%s' no supera el umbral configurado (%.2f).\n", 
                valor, sensor, lista->umbral);
@@ -113,11 +115,11 @@ void capturarEventoConsola(ListaVigia *lista) {
 // Recorrido hacia adelante (cabeza -> cola)
 void imprimirEventosAdelante(const ListaVigia *lista) {
     if (lista == NULL || lista->cabeza == NULL) {
-        printf("\nEl historial de eventos está vacío.\n");
+        printf("\nEl historial de eventos esta vacio.\n");
         return;
     }
 
-    printf("\n=== HISTORIAL DE EVENTOS (ADELANTE): ESTACIÓN VIGÍA (Total: %d) ===\n", lista->total);
+    printf("\n=== HISTORIAL DE EVENTOS (ADELANTE): ESTACION VIGIA (Total: %d) ===\n", lista->total);
 
     NodoEvento *actual = lista->cabeza;
     int idx = 1;
@@ -128,14 +130,14 @@ void imprimirEventosAdelante(const ListaVigia *lista) {
     }
 }
 
-// Recorrido hacia atrás (cola -> cabeza)
+// Recorrido hacia atras (cola -> cabeza)
 void imprimirEventosAtras(const ListaVigia *lista) {
     if (lista == NULL || lista->cola == NULL) {
-        printf("\nEl historial de eventos está vacío.\n");
+        printf("\nEl historial de eventos esta vacio.\n");
         return;
     }
 
-    printf("\n=== HISTORIAL DE EVENTOS (INVERSO): ESTACIÓN VIGÍA (Total: %d) ===\n", lista->total);
+    printf("\n=== HISTORIAL DE EVENTOS (INVERSO): ESTACION VIGIA (Total: %d) ===\n", lista->total);
 
     NodoEvento *actual = lista->cola;
     int idx = lista->total;
@@ -146,10 +148,10 @@ void imprimirEventosAtras(const ListaVigia *lista) {
     }
 }
 
-// Búsqueda y filtrado por tipo de sensor
+// Busqueda y filtrado por tipo de sensor
 void buscarPorSensor(const ListaVigia *lista, const char *sensorBuscado) {
     if (lista == NULL || lista->cabeza == NULL) {
-        printf("\nEl historial de eventos está vacío.\n");
+        printf("\nEl historial de eventos esta vacio.\n");
         return;
     }
 
@@ -170,10 +172,10 @@ void buscarPorSensor(const ListaVigia *lista, const char *sensorBuscado) {
     }
 }
 
-// Elimina un evento de la lista por su número de índice (1 a N)
+// Elimina un evento de la lista por su numero de indice (1 a N)
 int eliminarEventoPorIndice(ListaVigia *lista, int indice) {
     if (lista == NULL || lista->cabeza == NULL || indice < 1 || indice > lista->total) {
-        printf("\nÍndice no válido o lista vacía.\n");
+        printf("\nIndice no valido o lista vacia.\n");
         return 0;
     }
 
@@ -182,7 +184,7 @@ int eliminarEventoPorIndice(ListaVigia *lista, int indice) {
         actual = actual->sig;
     }
 
-    // Desconexión de los punteros
+    // Desconexion de los punteros
     if (actual->ant != NULL) {
         actual->ant->sig = actual->sig;
     } else {
@@ -192,10 +194,10 @@ int eliminarEventoPorIndice(ListaVigia *lista, int indice) {
     if (actual->sig != NULL) {
         actual->sig->ant = actual->ant;
     } else {
-        lista->cola = actual->ant; // Era el último elemento
+        lista->cola = actual->ant; // Era el ultimo elemento
     }
 
-    printf("\n>> Evento #%d ('%s' con valor %.2f) eliminado con éxito.\n", 
+    printf("\n>> Evento #%d ('%s' con valor %.2f) eliminado con exito.\n", 
            indice, actual->tipoSensor, actual->valor);
 
     free(actual);
@@ -203,7 +205,7 @@ int eliminarEventoPorIndice(ListaVigia *lista, int indice) {
     return 1;
 }
 
-// Cálculo de estadísticas mediante punteros por referencia
+// Calculo de estadisticas mediante punteros por referencia
 int calcularEstadisticas(const ListaVigia *lista, const char *sensorBuscado, float *promedio, float *max, float *min) {
     if (lista == NULL || lista->cabeza == NULL) return 0;
 
@@ -246,7 +248,7 @@ void cambiarUmbral(ListaVigia *lista) {
     printf(">> Umbral actualizado a: %.2f\n", lista->umbral);
 }
 
-// Liberación limpia de memoria de toda la lista
+// Liberacion limpia de memoria de toda la lista
 void liberarLista(ListaVigia **lista) {
     if (lista != NULL && *lista != NULL) {
         NodoEvento *actual = (*lista)->cabeza;
@@ -261,19 +263,34 @@ void liberarLista(ListaVigia **lista) {
     }
 }
 
-// FASE 3: ESTRUCTURAS Y FUNCIONES PARA LA PILA DE DESHACER (LIFO DE COMANDOS)
+
+// FASE 3: ESTRUCTURAS Y FUNCIONES PARA LA PILA DE DESHACER (LIFO) Y COLA DE COMANDOS (FIFO)
 
 
-typedef struct NodoComando {
+// Estructura de Comando de Motor/Actuador
+typedef struct Comando {
     int idComando;
     char instruccion[50];
-    struct NodoComando *sig; // Apunta al elemento inferior en la pila
+} Comando;
+
+// Nodo para estructuras de comandos (utilizado por Pila y Cola)
+typedef struct NodoComando {
+    Comando cmd;
+    struct NodoComando *sig;
 } NodoComando;
 
+// Estructura para la Pila de Deshacer (LIFO)
 typedef struct {
     NodoComando *tope;
     int totalComandos;
 } PilaDeshacer;
+
+// Estructura para la Cola de Comandos (FIFO) - Semana 13
+typedef struct {
+    NodoComando *frente;
+    NodoComando *final;
+    int totalPendientes;
+} ColaComandos;
 
 // Inicializa la pila de comandos
 PilaDeshacer* crearPila(void) {
@@ -284,12 +301,54 @@ PilaDeshacer* crearPila(void) {
     return pila;
 }
 
+// Inicializa la cola de comandos (FIFO)
+ColaComandos* crearCola(void) {
+    ColaComandos *cola = (ColaComandos *)malloc(sizeof(ColaComandos));
+    if (cola == NULL) return NULL;
+    cola->frente = NULL;
+    cola->final = NULL;
+    cola->totalPendientes = 0;
+    return cola;
+}
+
 int estaVaciaPila(const PilaDeshacer *pila) {
     return (pila == NULL || pila->tope == NULL);
 }
 
-// Apilar (Push): Registra una nueva acción ejecutada en los actuadores
-void apilarComando(PilaDeshacer *pila, int id, const char *instruccion) {
+int estaVaciaCola(const ColaComandos *cola) {
+    return (cola == NULL || cola->frente == NULL);
+}
+
+// Encolar (Enqueue / FIFO): Agrega una instruccion al final de la cola de ejecucion
+void encolarComando(ColaComandos *cola, int id, const char *instruccion) {
+    if (cola == NULL) return;
+
+    NodoComando *nuevo = (NodoComando *)malloc(sizeof(NodoComando));
+    if (nuevo == NULL) {
+        printf("Error: No se pudo asignar memoria para encolar el comando.\n");
+        return;
+    }
+
+    nuevo->cmd.idComando = id;
+    strncpy(nuevo->cmd.instruccion, instruccion, sizeof(nuevo->cmd.instruccion) - 1);
+    nuevo->cmd.instruccion[sizeof(nuevo->cmd.instruccion) - 1] = '\0';
+    nuevo->sig = NULL;
+
+    if (cola->final == NULL) {
+        cola->frente = nuevo;
+        cola->final = nuevo;
+    } else {
+        cola->final->sig = nuevo;
+        cola->final = nuevo;
+    }
+    cola->totalPendientes++;
+
+    printf(">> [COLA FIFO] Comando #%d '%s' guardado en cola de espera (Pendientes: %d).\n", 
+           id, instruccion, cola->totalPendientes);
+}
+
+// Apilar (Push / LIFO): Registra una accion ya ejecutada en la Pila de Deshacer
+void apilarComando(PilaDeshacer *pila, Comando cmd) {
     if (pila == NULL) return;
 
     NodoComando *nuevo = (NodoComando *)malloc(sizeof(NodoComando));
@@ -298,19 +357,41 @@ void apilarComando(PilaDeshacer *pila, int id, const char *instruccion) {
         return;
     }
 
-    nuevo->idComando = id;
-    strncpy(nuevo->instruccion, instruccion, sizeof(nuevo->instruccion) - 1);
-    nuevo->instruccion[sizeof(nuevo->instruccion) - 1] = '\0';
-
+    nuevo->cmd = cmd;
     nuevo->sig = pila->tope;
     pila->tope = nuevo;
     pila->totalComandos++;
 
-    printf(">> [ACTUADOR] Comando #%d '%s' ejecutado y registrado en la Pila (Undo).\n", 
-           id, instruccion);
+    printf(">> [HISTORIAL LIFO] Comando #%d '%s' registrado en Pila (Undo).\n", 
+           cmd.idComando, cmd.instruccion);
 }
 
-// Desapilar (Pop / Undo): Revierte la última acción enviada al actuador (LIFO)
+// Desencolar y Ejecutar: Consume de la Cola FIFO y transfiere a la Pila LIFO (Fase 3 integrada)
+int ejecutarSiguienteComando(ColaComandos *cola, PilaDeshacer *pila) {
+    if (estaVaciaCola(cola)) {
+        printf("\n[MOTOR] No hay comandos pendientes por ejecutar en la cola.\n");
+        return 0;
+    }
+
+    NodoComando *temp = cola->frente;
+    Comando cmdEjecutado = temp->cmd;
+
+    cola->frente = cola->frente->sig;
+    if (cola->frente == NULL) {
+        cola->final = NULL;
+    }
+    free(temp);
+    cola->totalPendientes--;
+
+    printf("\n -> [MOTOR] Ejecutando comando FIFO: #%d '%s'\n", 
+           cmdEjecutado.idComando, cmdEjecutado.instruccion);
+
+    // Conecta con la Pila LIFO de deshacer
+    apilarComando(pila, cmdEjecutado);
+    return 1;
+}
+
+// Desapilar (Pop / Undo): Revierte la ultima accion ejecutada (LIFO)
 int deshacerComando(PilaDeshacer *pila) {
     if (estaVaciaPila(pila)) {
         printf("\n[DESHACER] No hay comandos pendientes por revertir en la pila.\n");
@@ -318,8 +399,8 @@ int deshacerComando(PilaDeshacer *pila) {
     }
 
     NodoComando *temp = pila->tope;
-    printf("\n>> [DESHACER (UNDO)] Revertida la acción #%d: '%s'\n", 
-           temp->idComando, temp->instruccion);
+    printf("\n <- [DESHACER (UNDO)] Revertida la accion #%d: '%s'\n", 
+           temp->cmd.idComando, temp->cmd.instruccion);
 
     pila->tope = temp->sig;
     free(temp);
@@ -327,14 +408,14 @@ int deshacerComando(PilaDeshacer *pila) {
     return 1;
 }
 
-// Cima (Peek): Muestra la última acción sin borrarla
+// Cima (Peek): Muestra la ultima accion ejecutada sin borrarla
 void mostrarUltimoComando(const PilaDeshacer *pila) {
     if (estaVaciaPila(pila)) {
-        printf("\nLa pila de comandos está vacía.\n");
+        printf("\nLa pila de comandos ejecutados esta vacia.\n");
         return;
     }
-    printf("\n[CIMA PILA] Último comando ejecutado: #%d - %s\n", 
-           pila->tope->idComando, pila->tope->instruccion);
+    printf("\n[CIMA PILA] Ultimo comando ejecutado: #%d - %s\n", 
+           pila->tope->cmd.idComando, pila->tope->cmd.instruccion);
 }
 
 // Liberar memoria de la pila
@@ -349,19 +430,85 @@ void liberarPila(PilaDeshacer **pila) {
     }
 }
 
+// Liberar memoria de la cola
+void liberarCola(ColaComandos **cola) {
+    if (cola != NULL && *cola != NULL) {
+        while (!estaVaciaCola(*cola)) {
+            NodoComando *temp = (*cola)->frente;
+            (*cola)->frente = (*cola)->frente->sig;
+            free(temp);
+        }
+        free(*cola);
+        *cola = NULL;
+        printf("Memoria de la cola de comandos liberada correctamente.\n");
+    }
+}
 
-// PROGRAMA PRINCIPAL CON MENÚ INTEGRADO
+
+// SEMANA 13: MODULO DE BUFER CIRCULAR DE LECTURAS CONTINUAS (SENSORES)
+
+
+typedef struct {
+    float buf[TAM_BUFER];
+    int frente;
+    int cuenta;
+} BuferCircular;
+
+void initBufer(BuferCircular *b) {
+    b->frente = 0;
+    b->cuenta = 0;
+}
+
+void encolarBufer(BuferCircular *b, float lectura) {
+    int fin = (b->frente + b->cuenta) % TAM_BUFER; // Indice circular
+    if (b->cuenta == TAM_BUFER) {
+        // Bufer lleno: sobrescribe el dato mas antiguo en 'frente'
+        b->buf[b->frente] = lectura;
+        b->frente = (b->frente + 1) % TAM_BUFER;
+    } else {
+        b->buf[fin] = lectura;
+        b->cuenta++;
+    }
+}
+
+void simularBuferLecturas(void) {
+    BuferCircular b;
+    initBufer(&b);
+    float lecturas[8] = {10.5f, 20.0f, 32.1f, 45.0f, 51.2f, 63.4f, 70.0f, 88.5f};
+
+    printf("\n=== SIMULACION DE BUFER CIRCULAR DE SENSORES (N = %d) ===\n", TAM_BUFER);
+    printf("Encolando 8 lecturas continuas para observar la sobrescritura:\n\n");
+
+    for (int i = 0; i < 8; i++) {
+        encolarBufer(&b, lecturas[i]);
+        printf("Lectura %d (val: %5.1f) -> Arreglo: [", i + 1, lecturas[i]);
+        for (int j = 0; j < TAM_BUFER; j++) {
+            if (j < b.cuenta || b.cuenta == TAM_BUFER) printf("%5.1f", b.buf[j]);
+            else printf("  _  ");
+            if (j < TAM_BUFER - 1) printf(", ");
+        }
+        printf("] | Frente en pos: %d | Total: %d\n", b.frente, b.cuenta);
+    }
+    printf("\n");
+}
+
+
+// PROGRAMA PRINCIPAL CON MENU INTEGRADO
 
 
 int main(void) {
-    // Inicialización del Historial de Eventos (Fase 2)
+    // Inicializacion del Historial de Eventos (Fase 2)
     ListaVigia *historial = crearLista(UMBRAL_DEFECTO);
     if (historial == NULL) return 1;
 
-    // Inicialización de la Pila de Deshacer (Fase 3)
+    // Inicializacion de la Pila de Deshacer y Cola de Comandos (Fase 3 / Semana 13)
     PilaDeshacer *pilaUndo = crearPila();
-    if (pilaUndo == NULL) {
+    ColaComandos *colaCmd = crearCola();
+
+    if (pilaUndo == NULL || colaCmd == NULL) {
         liberarLista(&historial);
+        liberarPila(&pilaUndo);
+        liberarCola(&colaCmd);
         return 1;
     }
 
@@ -378,23 +525,26 @@ int main(void) {
     registrarEventoConUmbral(historial, "Temperatura", 21.0f, "2026-09-24 09:30:00");
 
     do {
-    
-        printf("   SISTEMA ESTACIÓN VIGÍA - FASE 2 & 3   \n");
-       
+        printf("\n========================================\n");
+        printf("    SISTEMA ESTACION VIGIA - FASE 2 & 3   \n");
+        printf("========================================\n");
         printf("1. Registrar nuevo evento (por umbral)\n");
         printf("2. Mostrar historial (Adelante)\n");
         printf("3. Mostrar historial (Inverso)\n");
         printf("4. Buscar por tipo de sensor\n");
-        printf("5. Eliminar evento por índice\n");
-        printf("6. Calcular estadísticas por sensor (Punteros)\n");
+        printf("5. Eliminar evento por indice\n");
+        printf("6. Calcular estadisticas por sensor (Punteros)\n");
         printf("7. Cambiar umbral de disparo (Actual: %.2f)\n", historial->umbral);
-      
-        printf("8. [FASE 3] Enviar comando a actuador (Push a la Pila)\n");
-        printf("9. [FASE 3] Deshacer último comando (Pop / Undo LIFO)\n");
-        printf("10. [FASE 3] Ver último comando en cima (Peek)\n");
         printf("----------------------------------------\n");
-        printf("11. Salir\n");
-        printf("Seleccione una opción: ");
+        printf("8.  [COLA FIFO] Encolar comando a actuador\n");
+        printf("9.  [MOTOR] Ejecutar siguiente comando (FIFO -> LIFO)\n");
+        printf("10. [DESHACER] Revertir ultimo comando (Pop LIFO)\n");
+        printf("11. [PEEK] Ver ultimo comando ejecutado en cima\n");
+        printf("----------------------------------------\n");
+        printf("12. [SEMANA 13] Simular Bufer Circular de Sensores\n");
+        printf("----------------------------------------\n");
+        printf("13. Salir\n");
+        printf("Seleccione una opcion: ");
 
         if (scanf("%d", &opcion) != 1) {
             while (getchar() != '\n');
@@ -421,7 +571,7 @@ int main(void) {
                 imprimirEventosAdelante(historial);
                 if (historial->total > 0) {
                     int idx;
-                    printf("\nIngrese el número de registro (#) a eliminar: ");
+                    printf("\nIngrese el numero de registro (#) a eliminar: ");
                     scanf("%d", &idx);
                     eliminarEventoPorIndice(historial, idx);
                 }
@@ -429,7 +579,7 @@ int main(void) {
             }
             case 6: {
                 float prom = 0.0f, maxVal = 0.0f, minVal = 0.0f;
-                printf("\nIngrese el nombre del sensor para estadísticas (o 'TODOS'): ");
+                printf("\nIngrese el nombre del sensor para estadisticas (o 'TODOS'): ");
                 scanf(" %29[^\n]", sensorBusqueda);
 
                 int total = 0;
@@ -440,13 +590,13 @@ int main(void) {
                 }
 
                 if (total > 0) {
-                    printf("\n=== ESTADÍSTICAS OBTENIDAS POR REFERENCIA ===\n");
+                    printf("\n=== ESTADISTICAS OBTENIDAS POR REFERENCIA ===\n");
                     printf("Muestras procesadas : %d\n", total);
                     printf("Promedio            : %.2f\n", prom);
-                    printf("Valor Máximo        : %.2f\n", maxVal);
-                    printf("Valor Mínimo        : %.2f\n", minVal);
+                    printf("Valor Maximo        : %.2f\n", maxVal);
+                    printf("Valor Minimo        : %.2f\n", minVal);
                 } else {
-                    printf("\nNo hay datos para generar estadísticas del sensor especificado.\n");
+                    printf("\nNo hay datos para generar estadisticas del sensor especificado.\n");
                 }
                 break;
             }
@@ -454,27 +604,34 @@ int main(void) {
                 cambiarUmbral(historial);
                 break;
             case 8:
-                printf("\nIngrese el comando/instrucción para el actuador (ej. 'ACTIVAR_SERVO', 'ABRIR_VALVULA'): ");
+                printf("\nIngrese el comando/instruccion para el actuador (ej. 'AVANZAR', 'GIRAR_IZQ', 'DETENER'): ");
                 scanf(" %49[^\n]", instruccionActuador);
-                apilarComando(pilaUndo, idComandoContador++, instruccionActuador);
+                encolarComando(colaCmd, idComandoContador++, instruccionActuador);
                 break;
             case 9:
-                deshacerComando(pilaUndo);
+                ejecutarSiguienteComando(colaCmd, pilaUndo);
                 break;
             case 10:
-                mostrarUltimoComando(pilaUndo);
+                deshacerComando(pilaUndo);
                 break;
             case 11:
-                printf("\nSaliendo del programa Estación Vigía...\n");
+                mostrarUltimoComando(pilaUndo);
+                break;
+            case 12:
+                simularBuferLecturas();
+                break;
+            case 13:
+                printf("\nSaliendo del programa Estacion Vigia...\n");
                 break;
             default:
-                printf("\nOpción no válida. Intente de nuevo.\n");
+                printf("\nOpcion no valida. Intente de nuevo.\n");
         }
-    } while (opcion != 11);
+    } while (opcion != 13);
 
-    // Liberación completa de memoria de ambas estructuras
+    // Liberacion completa de memoria de todas las estructuras
     liberarLista(&historial);
     liberarPila(&pilaUndo);
+    liberarCola(&colaCmd);
 
     return 0;
 }
