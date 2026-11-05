@@ -2,62 +2,56 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CAPACIDAD_INICIAL 2
+#define UMBRAL_DEFECTO 25.0f // Umbral predeterminado para registro de eventos
 
-// Estructura para un evento de sensor
-typedef struct Evento {
+// Estructura para un Nodo en la Lista Doblemente Enlazada
+typedef struct NodoEvento {
     char tipoSensor[30];
     float valor;
     char marcaTiempo[25]; // Formato "YYYY-MM-DD HH:MM:SS"
-} Evento;
+    struct NodoEvento *ant; // Puntero al nodo anterior
+    struct NodoEvento *sig; // Puntero al nodo siguiente
+} NodoEvento;
 
-// Estructura para el búfer dinámico de la Estación Vigía
-typedef struct BuferVigia {
-    Evento *eventos;   // Arreglo dinámico en memoria (heap)
-    int capacidad;     // Capacidad máxima asignada actualmente
-    int total;         // Cantidad actual de eventos almacenados
-} BuferVigia;
+// Estructura de control para la Lista Doblemente Enlazada de la Estación Vigía
+typedef struct ListaVigia {
+    NodoEvento *cabeza; // Primer elemento
+    NodoEvento *cola;   // Último elemento
+    int total;          // Cantidad actual de eventos almacenados
+    float umbral;       // Umbral límite para disparo de registro
+} ListaVigia;
 
-// Reserva la memoria inicial para el búfer
-BuferVigia* crearBufer(int capacidadInicial) {
-    BuferVigia *bufer = (BuferVigia *)malloc(sizeof(BuferVigia));
-    if (bufer == NULL) {
+// Crea e inicializa la lista doblemente enlazada
+ListaVigia* crearLista(float umbralInicial) {
+    ListaVigia *lista = (ListaVigia *)malloc(sizeof(ListaVigia));
+    if (lista == NULL) {
         printf("Error: No se pudo asignar memoria para la estructura principal.\n");
         return NULL;
     }
 
-    bufer->eventos = (Evento *)malloc(capacidadInicial * sizeof(Evento));
-    if (bufer->eventos == NULL) {
-        printf("Error: No se pudo asignar memoria para el arreglo de eventos.\n");
-        free(bufer);
-        return NULL;
-    }
-
-    bufer->capacidad = capacidadInicial;
-    bufer->total = 0;
-    return bufer;
+    lista->cabeza = NULL;
+    lista->cola = NULL;
+    lista->total = 0;
+    lista->umbral = umbralInicial;
+    return lista;
 }
 
-// Registra un evento y expande el búfer con realloc cuando se llena
-int registrarEvento(BuferVigia *bufer, const char *sensor, float valor, const char *timestamp) {
-    if (bufer == NULL || bufer->eventos == NULL) return 0;
+// Inserta un nuevo evento al final de la lista si cruza/supera el umbral establecido
+int registrarEventoConUmbral(ListaVigia *lista, const char *sensor, float valor, const char *timestamp) {
+    if (lista == NULL) return 0;
 
-    // Redimensionamiento dinámico cuando se alcanza la capacidad máxima
-    if (bufer->total >= bufer->capacidad) {
-        int nuevaCapacidad = bufer->capacidad * 2;
-        Evento *temp = (Evento *)realloc(bufer->eventos, nuevaCapacidad * sizeof(Evento));
-        
-        if (temp == NULL) {
-            printf("Error: No se pudo redimensionar la memoria del búfer.\n");
-            return 0;
-        }
-        
-        bufer->eventos = temp;
-        bufer->capacidad = nuevaCapacidad;
-        printf(">> [Memoria] Búfer expandido dinámicamente a capacidad: %d elementos.\n", bufer->capacidad);
+    // Validación de cruce de umbral
+    if (valor < lista->umbral) {
+        printf(">> [OMITIDO] El valor %.2f del sensor '%s' no supera el umbral configurado (%.2f).\n", 
+               valor, sensor, lista->umbral);
+        return 0;
     }
 
-    Evento *nuevo = &bufer->eventos[bufer->total];
+    NodoEvento *nuevo = (NodoEvento *)malloc(sizeof(NodoEvento));
+    if (nuevo == NULL) {
+        printf("Error: No se pudo asignar memoria para el nuevo evento.\n");
+        return 0;
+    }
 
     strncpy(nuevo->tipoSensor, sensor, sizeof(nuevo->tipoSensor) - 1);
     nuevo->tipoSensor[sizeof(nuevo->tipoSensor) - 1] = '\0';
@@ -67,7 +61,19 @@ int registrarEvento(BuferVigia *bufer, const char *sensor, float valor, const ch
     strncpy(nuevo->marcaTiempo, timestamp, sizeof(nuevo->marcaTiempo) - 1);
     nuevo->marcaTiempo[sizeof(nuevo->marcaTiempo) - 1] = '\0';
 
-    bufer->total++;
+    nuevo->sig = NULL;
+    nuevo->ant = lista->cola;
+
+    if (lista->cola != NULL) {
+        lista->cola->sig = nuevo;
+    } else {
+        lista->cabeza = nuevo; // Era el primer nodo
+    }
+
+    lista->cola = nuevo;
+    lista->total++;
+
+    printf(">> [REGISTRADO] Evento registrado exitosamente al cruzar umbral >= %.2f.\n", lista->umbral);
     return 1;
 }
 
@@ -79,12 +85,12 @@ void corregir(float *lectura) {
 }
 
 // Captura de datos desde consola
-void capturarEventoConsola(BuferVigia *bufer) {
+void capturarEventoConsola(ListaVigia *lista) {
     char sensor[30];
     float valor;
     char timestamp[25];
 
-    printf("\n--- REGISTRAR NUEVO EVENTO ---\n");
+    printf("\n--- REGISTRAR NUEVO EVENTO (UMBRAL ACTUAL: %.2f) ---\n", lista->umbral);
     printf("Tipo de sensor: ");
     scanf(" %29[^\n]", sensor);
 
@@ -97,32 +103,48 @@ void capturarEventoConsola(BuferVigia *bufer) {
     printf("Marca de tiempo (YYYY-MM-DD HH:MM:SS): ");
     scanf(" %24[^\n]", timestamp);
 
-    if (registrarEvento(bufer, sensor, valor, timestamp)) {
-        printf(">> Evento registrado exitosamente.\n");
-    }
+    registrarEventoConUmbral(lista, sensor, valor, timestamp);
 }
 
-// Recorrido del búfer dinámico
-void imprimirEventos(const BuferVigia *bufer) {
-    if (bufer == NULL || bufer->total == 0) {
+// Recorrido hacia adelante (cabeza -> cola)
+void imprimirEventosAdelante(const ListaVigia *lista) {
+    if (lista == NULL || lista->cabeza == NULL) {
         printf("\nEl historial de eventos está vacío.\n");
         return;
     }
 
-    printf("\n=== HISTORIAL DE EVENTOS: ESTACIÓN VIGÍA (Registros: %d | Capacidad Búfer: %d) ===\n", 
-           bufer->total, bufer->capacidad);
+    printf("\n=== HISTORIAL DE EVENTOS (ADELANTE): ESTACIÓN VIGÍA (Total: %d) ===\n", lista->total);
 
-    for (int i = 0; i < bufer->total; i++) {
-        printf("[%s] Sensor: %-20s | Valor: %.2f\n",
-               bufer->eventos[i].marcaTiempo,
-               bufer->eventos[i].tipoSensor,
-               bufer->eventos[i].valor);
+    NodoEvento *actual = lista->cabeza;
+    int idx = 1;
+    while (actual != NULL) {
+        printf("#%d [%s] Sensor: %-20s | Valor: %.2f\n",
+               idx++, actual->marcaTiempo, actual->tipoSensor, actual->valor);
+        actual = actual->sig;
+    }
+}
+
+// Recorrido hacia atrás (cola -> cabeza)
+void imprimirEventosAtras(const ListaVigia *lista) {
+    if (lista == NULL || lista->cola == NULL) {
+        printf("\nEl historial de eventos está vacío.\n");
+        return;
+    }
+
+    printf("\n=== HISTORIAL DE EVENTOS (INVERSO): ESTACIÓN VIGÍA (Total: %d) ===\n", lista->total);
+
+    NodoEvento *actual = lista->cola;
+    int idx = lista->total;
+    while (actual != NULL) {
+        printf("#%d [%s] Sensor: %-20s | Valor: %.2f\n",
+               idx--, actual->marcaTiempo, actual->tipoSensor, actual->valor);
+        actual = actual->ant;
     }
 }
 
 // Búsqueda y filtrado por tipo de sensor
-void buscarPorSensor(const BuferVigia *bufer, const char *sensorBuscado) {
-    if (bufer == NULL || bufer->total == 0) {
+void buscarPorSensor(const ListaVigia *lista, const char *sensorBuscado) {
+    if (lista == NULL || lista->cabeza == NULL) {
         printf("\nEl historial de eventos está vacío.\n");
         return;
     }
@@ -130,11 +152,13 @@ void buscarPorSensor(const BuferVigia *bufer, const char *sensorBuscado) {
     int encontrados = 0;
     printf("\n=== FILTRANDO POR SENSOR: %s ===\n", sensorBuscado);
 
-    for (int i = 0; i < bufer->total; i++) {
-        if (strcmp(bufer->eventos[i].tipoSensor, sensorBuscado) == 0) {
-            printf("[%s] Valor: %.2f\n", bufer->eventos[i].marcaTiempo, bufer->eventos[i].valor);
+    NodoEvento *actual = lista->cabeza;
+    while (actual != NULL) {
+        if (strcmp(actual->tipoSensor, sensorBuscado) == 0) {
+            printf("[%s] Valor: %.2f\n", actual->marcaTiempo, actual->valor);
             encontrados++;
         }
+        actual = actual->sig;
     }
 
     if (encontrados == 0) {
@@ -142,17 +166,51 @@ void buscarPorSensor(const BuferVigia *bufer, const char *sensorBuscado) {
     }
 }
 
-// Cálculo de estadísticas (promedio, máximo, mínimo) con retorno por referencia
-int calcularEstadisticas(const BuferVigia *bufer, const char *sensorBuscado, float *promedio, float *max, float *min) {
-    if (bufer == NULL || bufer->total == 0) return 0;
+// Elimina un evento de la lista por su número de índice (1 a N)
+int eliminarEventoPorIndice(ListaVigia *lista, int indice) {
+    if (lista == NULL || lista->cabeza == NULL || indice < 1 || indice > lista->total) {
+        printf("\nÍndice no válido o lista vacía.\n");
+        return 0;
+    }
+
+    NodoEvento *actual = lista->cabeza;
+    for (int i = 1; i < indice; i++) {
+        actual = actual->sig;
+    }
+
+    // Desconexión de los punteros
+    if (actual->ant != NULL) {
+        actual->ant->sig = actual->sig;
+    } else {
+        lista->cabeza = actual->sig; // Era el primer elemento
+    }
+
+    if (actual->sig != NULL) {
+        actual->sig->ant = actual->ant;
+    } else {
+        lista->cola = actual->ant; // Era el último elemento
+    }
+
+    printf("\n>> Evento #%d ('%s' con valor %.2f) eliminado con éxito.\n", 
+           indice, actual->tipoSensor, actual->valor);
+
+    free(actual);
+    lista->total--;
+    return 1;
+}
+
+// Cálculo de estadísticas mediante punteros por referencia
+int calcularEstadisticas(const ListaVigia *lista, const char *sensorBuscado, float *promedio, float *max, float *min) {
+    if (lista == NULL || lista->cabeza == NULL) return 0;
 
     float suma = 0.0f;
     int contador = 0;
     int primero = 1;
 
-    for (int i = 0; i < bufer->total; i++) {
-        if (sensorBuscado == NULL || strcmp(bufer->eventos[i].tipoSensor, sensorBuscado) == 0) {
-            float v = bufer->eventos[i].valor;
+    NodoEvento *actual = lista->cabeza;
+    while (actual != NULL) {
+        if (sensorBuscado == NULL || strcmp(actual->tipoSensor, sensorBuscado) == 0) {
+            float v = actual->valor;
             suma += v;
 
             if (primero) {
@@ -165,6 +223,7 @@ int calcularEstadisticas(const BuferVigia *bufer, const char *sensorBuscado, flo
             }
             contador++;
         }
+        actual = actual->sig;
     }
 
     if (contador > 0) {
@@ -174,22 +233,33 @@ int calcularEstadisticas(const BuferVigia *bufer, const char *sensorBuscado, flo
     return contador;
 }
 
-// Liberación limpia de memoria para evitar fugas y punteros colgantes
-void liberarBufer(BuferVigia **bufer) {
-    if (bufer != NULL && *bufer != NULL) {
-        if ((*bufer)->eventos != NULL) {
-            free((*bufer)->eventos);
-            (*bufer)->eventos = NULL; // Evita puntero colgante
+// Cambia el umbral de disparo del sistema
+void cambiarUmbral(ListaVigia *lista) {
+    if (lista == NULL) return;
+    printf("\nIngrese el nuevo valor de umbral de disparo: ");
+    scanf("%f", &lista->umbral);
+    corregir(&lista->umbral);
+    printf(">> Umbral actualizado a: %.2f\n", lista->umbral);
+}
+
+// Liberación limpia de memoria de toda la lista
+void liberarLista(ListaVigia **lista) {
+    if (lista != NULL && *lista != NULL) {
+        NodoEvento *actual = (*lista)->cabeza;
+        while (actual != NULL) {
+            NodoEvento *siguiente = actual->sig;
+            free(actual);
+            actual = siguiente;
         }
-        free(*bufer);
-        *bufer = NULL; // Evita puntero colgante
-        printf("\nMemoria liberada correctamente.\n");
+        free(*lista);
+        *lista = NULL; // Evita puntero colgante
+        printf("\nMemoria de la lista liberada correctamente.\n");
     }
 }
 
 int main() {
-    // 1. Inicialización con capacidad inicial pequeña (2) para probar realloc automáticamente
-    BuferVigia *historial = crearBufer(CAPACIDAD_INICIAL);
+    // Inicialización de la lista doblemente enlazada con umbral por defecto (25.0)
+    ListaVigia *historial = crearLista(UMBRAL_DEFECTO);
     if (historial == NULL) {
         return 1;
     }
@@ -197,22 +267,25 @@ int main() {
     int opcion = 0;
     char sensorBusqueda[30];
 
-    // Registros de prueba iniciales
-    registrarEvento(historial, "Temperatura", 24.5f, "2026-09-24 08:30:00");
-    registrarEvento(historial, "Humedad", 65.0f, "2026-09-24 08:35:00");
-    registrarEvento(historial, "Temperatura", 28.2f, "2026-09-24 09:00:00");
-    registrarEvento(historial, "Presion Atmosferica", 1013.25f, "2026-09-24 08:40:00");
-    registrarEvento(historial, "Temperatura", 21.0f, "2026-09-24 09:30:00");
+    // Registros de prueba (sólo se insertan aquellos que igualan o superan el umbral de 25.0)
+    registrarEventoConUmbral(historial, "Temperatura", 24.5f, "2026-09-24 08:30:00"); // Omitido (< 25.0)
+    registrarEventoConUmbral(historial, "Humedad", 65.0f, "2026-09-24 08:35:00");     // Registrado
+    registrarEventoConUmbral(historial, "Temperatura", 28.2f, "2026-09-24 09:00:00"); // Registrado
+    registrarEventoConUmbral(historial, "Presion Atmosferica", 1013.25f, "2026-09-24 08:40:00"); // Registrado
+    registrarEventoConUmbral(historial, "Temperatura", 21.0f, "2026-09-24 09:30:00"); // Omitido (< 25.0)
 
     do {
-        printf("\n====================================\n");
-        printf("    SISTEMA ESTACIÓN VIGÍA - MENU   \n");
-        printf("====================================\n");
-        printf("1. Registrar nuevo evento\n");
-        printf("2. Mostrar historial completo\n");
-        printf("3. Buscar por tipo de sensor\n");
-        printf("4. Calcular estadísticas por sensor (Punteros)\n");
-        printf("5. Salir\n");
+        printf("\n========================================\n");
+        printf("   SISTEMA ESTACIÓN VIGÍA - FASE 2      \n");
+        printf("========================================\n");
+        printf("1. Registrar nuevo evento (por umbral)\n");
+        printf("2. Mostrar historial (Adelante)\n");
+        printf("3. Mostrar historial (Inverso)\n");
+        printf("4. Buscar por tipo de sensor\n");
+        printf("5. Eliminar evento por índice\n");
+        printf("6. Calcular estadísticas por sensor (Punteros)\n");
+        printf("7. Cambiar umbral de disparo (Actual: %.2f)\n", historial->umbral);
+        printf("8. Salir\n");
         printf("Seleccione una opción: ");
 
         if (scanf("%d", &opcion) != 1) {
@@ -226,14 +299,27 @@ int main() {
                 capturarEventoConsola(historial);
                 break;
             case 2:
-                imprimirEventos(historial);
+                imprimirEventosAdelante(historial);
                 break;
             case 3:
+                imprimirEventosAtras(historial);
+                break;
+            case 4:
                 printf("\nIngrese el nombre del sensor a buscar: ");
                 scanf(" %29[^\n]", sensorBusqueda);
                 buscarPorSensor(historial, sensorBusqueda);
                 break;
-            case 4: {
+            case 5: {
+                imprimirEventosAdelante(historial);
+                if (historial->total > 0) {
+                    int idx;
+                    printf("\nIngrese el número de registro (#) a eliminar: ");
+                    scanf("%d", &idx);
+                    eliminarEventoPorIndice(historial, idx);
+                }
+                break;
+            }
+            case 6: {
                 float prom = 0.0f, maxVal = 0.0f, minVal = 0.0f;
                 printf("\nIngrese el nombre del sensor para estadísticas (o 'TODOS'): ");
                 scanf(" %29[^\n]", sensorBusqueda);
@@ -256,16 +342,19 @@ int main() {
                 }
                 break;
             }
-            case 5:
+            case 7:
+                cambiarUmbral(historial);
+                break;
+            case 8:
                 printf("\nSaliendo del programa...\n");
                 break;
             default:
                 printf("\nOpción no válida. Intente de nuevo.\n");
         }
-    } while (opcion != 5);
+    } while (opcion != 8);
 
-    // 2. Liberación limpia de memoria
-    liberarBufer(&historial);
+    // Liberación completa de memoria
+    liberarLista(&historial);
 
     return 0;
 }
