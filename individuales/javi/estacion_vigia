@@ -35,9 +35,32 @@ void registrarEvento(NodoEvento **head, const char *sensor, float valor, const c
     *head = nuevo;
 }
 
+// Captura los datos desde consola y los registra en la lista
+void capturarEventoConsola(NodoEvento **head) {
+    char sensor[30];
+    float valor;
+    char timestamp[25];
+
+    printf("\n--- REGISTRAR NUEVO EVENTO ---\n");
+    printf("Tipo de sensor: ");
+    scanf("%29s", sensor);
+    printf("Valor medido: ");
+    scanf("%f", &valor);
+    printf("Marca de tiempo (YYYY-MM-DD HH:MM:SS): ");
+    scanf(" %[^\n]", timestamp);
+
+    registrarEvento(head, sensor, valor, timestamp);
+    printf(">> Evento registrado exitosamente.\n");
+}
+
 // Recorre e imprime la lista de eventos registrados
 void imprimirEventos(NodoEvento *head) {
     NodoEvento *p = head;
+    if (p == NULL) {
+        printf("\nEl historial de eventos esta vacio.\n");
+        return;
+    }
+    
     printf("\n=== HISTORIAL DE EVENTOS: ESTACION VIGIA ===\n");
     while (p != NULL) {
         printf("[%s] Sensor: %-12s | Valor: %.2f\n", 
@@ -45,6 +68,25 @@ void imprimirEventos(NodoEvento *head) {
                p->evento.tipoSensor, 
                p->evento.valor);
         p = p->sig;
+    }
+}
+
+// Busca y muestra eventos según el tipo de sensor
+void buscarPorSensor(NodoEvento *head, const char *sensorBuscado) {
+    NodoEvento *p = head;
+    int encontrados = 0;
+    
+    printf("\n=== FILTRANDO POR SENSOR: %s ===\n", sensorBuscado);
+    while (p != NULL) {
+        if (strcmp(p->evento.tipoSensor, sensorBuscado) == 0) {
+            printf("[%s] Valor: %.2f\n", p->evento.marcaTiempo, p->evento.valor);
+            encontrados++;
+        }
+        p = p->sig;
+    }
+    
+    if (encontrados == 0) {
+        printf("No se encontraron registros para el sensor especificado.\n");
     }
 }
 
@@ -57,21 +99,56 @@ void liberarEventos(NodoEvento **head) {
         free(aux);
     }
     *head = NULL;
-    printf("Memoria del historial liberada correctamente.\n");
+    printf("\nMemoria del historial liberada correctamente.\n");
 }
 
 int main() {
     NodoEvento *historial = NULL;
+    int opcion = 0;
+    char sensorBusqueda[30];
 
-    // Registros de prueba
+    // Registros iniciales de prueba
     registrarEvento(&historial, "Temperatura", 24.5f, "2026-10-22 08:30:00");
     registrarEvento(&historial, "Humedad", 65.0f, "2026-10-22 08:35:00");
     registrarEvento(&historial, "Presion", 1013.25f, "2026-10-22 08:40:00");
 
-    // Imprimir eventos
-    imprimirEventos(historial);
+    do {
+        printf("\n====================================\n");
+        printf("   SISTEMA ESTACION VIGIA - MENU\n");
+        printf("====================================\n");
+        printf("1. Registrar nuevo evento\n");
+        printf("2. Mostrar historial completo\n");
+        printf("3. Buscar por tipo de sensor\n");
+        printf("4. Salir\n");
+        printf("Seleccione una opcion: ");
+        
+        if (scanf("%d", &opcion) != 1) {
+            while (getchar() != '\n'); // Limpia el buffer de entrada en caso de caracter inválido
+            opcion = 0;
+            continue;
+        }
 
-    // Liberar memoria
+        switch (opcion) {
+            case 1:
+                capturarEventoConsola(&historial);
+                break;
+            case 2:
+                imprimirEventos(historial);
+                break;
+            case 3:
+                printf("\nIngrese el nombre del sensor a buscar: ");
+                scanf("%29s", sensorBusqueda);
+                buscarPorSensor(historial, sensorBusqueda);
+                break;
+            case 4:
+                printf("\nSaliendo del programa...\n");
+                break;
+            default:
+                printf("\nOpcion no valida. Intente de nuevo.\n");
+        }
+    } while (opcion != 4);
+
+    // Liberar memoria dinámica antes de finalizar
     liberarEventos(&historial);
 
     return 0;
