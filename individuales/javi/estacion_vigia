@@ -4,11 +4,15 @@
 
 #define UMBRAL_DEFECTO 25.0f // Umbral predeterminado para registro de eventos
 
+
+// FASE 2: ESTRUCTURAS Y FUNCIONES PARA EL HISTORIAL DE EVENTOS (LISTA DOBLE)
+
+
 // Estructura para un Nodo en la Lista Doblemente Enlazada
 typedef struct NodoEvento {
     char tipoSensor[30];
     float valor;
-    char marcaTiempo[25]; // Formato "YYYY-MM-DD HH:MM:SS"
+    char marcaTiempo[25];   // Formato "YYYY-MM-DD HH:MM:SS"
     struct NodoEvento *ant; // Puntero al nodo anterior
     struct NodoEvento *sig; // Puntero al nodo siguiente
 } NodoEvento;
@@ -253,31 +257,130 @@ void liberarLista(ListaVigia **lista) {
         }
         free(*lista);
         *lista = NULL; // Evita puntero colgante
-        printf("\nMemoria de la lista liberada correctamente.\n");
+        printf("\nMemoria de la lista de eventos liberada correctamente.\n");
     }
 }
 
-int main() {
-    // Inicialización de la lista doblemente enlazada con umbral por defecto (25.0)
+// FASE 3: ESTRUCTURAS Y FUNCIONES PARA LA PILA DE DESHACER (LIFO DE COMANDOS)
+
+
+typedef struct NodoComando {
+    int idComando;
+    char instruccion[50];
+    struct NodoComando *sig; // Apunta al elemento inferior en la pila
+} NodoComando;
+
+typedef struct {
+    NodoComando *tope;
+    int totalComandos;
+} PilaDeshacer;
+
+// Inicializa la pila de comandos
+PilaDeshacer* crearPila(void) {
+    PilaDeshacer *pila = (PilaDeshacer *)malloc(sizeof(PilaDeshacer));
+    if (pila == NULL) return NULL;
+    pila->tope = NULL;
+    pila->totalComandos = 0;
+    return pila;
+}
+
+int estaVaciaPila(const PilaDeshacer *pila) {
+    return (pila == NULL || pila->tope == NULL);
+}
+
+// Apilar (Push): Registra una nueva acción ejecutada en los actuadores
+void apilarComando(PilaDeshacer *pila, int id, const char *instruccion) {
+    if (pila == NULL) return;
+
+    NodoComando *nuevo = (NodoComando *)malloc(sizeof(NodoComando));
+    if (nuevo == NULL) {
+        printf("Error de memoria al apilar el comando.\n");
+        return;
+    }
+
+    nuevo->idComando = id;
+    strncpy(nuevo->instruccion, instruccion, sizeof(nuevo->instruccion) - 1);
+    nuevo->instruccion[sizeof(nuevo->instruccion) - 1] = '\0';
+
+    nuevo->sig = pila->tope;
+    pila->tope = nuevo;
+    pila->totalComandos++;
+
+    printf(">> [ACTUADOR] Comando #%d '%s' ejecutado y registrado en la Pila (Undo).\n", 
+           id, instruccion);
+}
+
+// Desapilar (Pop / Undo): Revierte la última acción enviada al actuador (LIFO)
+int deshacerComando(PilaDeshacer *pila) {
+    if (estaVaciaPila(pila)) {
+        printf("\n[DESHACER] No hay comandos pendientes por revertir en la pila.\n");
+        return 0;
+    }
+
+    NodoComando *temp = pila->tope;
+    printf("\n>> [DESHACER (UNDO)] Revertida la acción #%d: '%s'\n", 
+           temp->idComando, temp->instruccion);
+
+    pila->tope = temp->sig;
+    free(temp);
+    pila->totalComandos--;
+    return 1;
+}
+
+// Cima (Peek): Muestra la última acción sin borrarla
+void mostrarUltimoComando(const PilaDeshacer *pila) {
+    if (estaVaciaPila(pila)) {
+        printf("\nLa pila de comandos está vacía.\n");
+        return;
+    }
+    printf("\n[CIMA PILA] Último comando ejecutado: #%d - %s\n", 
+           pila->tope->idComando, pila->tope->instruccion);
+}
+
+// Liberar memoria de la pila
+void liberarPila(PilaDeshacer **pila) {
+    if (pila != NULL && *pila != NULL) {
+        while (!estaVaciaPila(*pila)) {
+            deshacerComando(*pila);
+        }
+        free(*pila);
+        *pila = NULL;
+        printf("Memoria de la pila de comandos liberada correctamente.\n");
+    }
+}
+
+
+// PROGRAMA PRINCIPAL CON MENÚ INTEGRADO
+
+
+int main(void) {
+    // Inicialización del Historial de Eventos (Fase 2)
     ListaVigia *historial = crearLista(UMBRAL_DEFECTO);
-    if (historial == NULL) {
+    if (historial == NULL) return 1;
+
+    // Inicialización de la Pila de Deshacer (Fase 3)
+    PilaDeshacer *pilaUndo = crearPila();
+    if (pilaUndo == NULL) {
+        liberarLista(&historial);
         return 1;
     }
 
     int opcion = 0;
+    int idComandoContador = 1;
     char sensorBusqueda[30];
+    char instruccionActuador[50];
 
-    // Registros de prueba (sólo se insertan aquellos que igualan o superan el umbral de 25.0)
-    registrarEventoConUmbral(historial, "Temperatura", 24.5f, "2026-09-24 08:30:00"); // Omitido (< 25.0)
-    registrarEventoConUmbral(historial, "Humedad", 65.0f, "2026-09-24 08:35:00");     // Registrado
-    registrarEventoConUmbral(historial, "Temperatura", 28.2f, "2026-09-24 09:00:00"); // Registrado
-    registrarEventoConUmbral(historial, "Presion Atmosferica", 1013.25f, "2026-09-24 08:40:00"); // Registrado
-    registrarEventoConUmbral(historial, "Temperatura", 21.0f, "2026-09-24 09:30:00"); // Omitido (< 25.0)
+    // Registros iniciales de prueba (Fase 2)
+    registrarEventoConUmbral(historial, "Temperatura", 24.5f, "2026-09-24 08:30:00");
+    registrarEventoConUmbral(historial, "Humedad", 65.0f, "2026-09-24 08:35:00");
+    registrarEventoConUmbral(historial, "Temperatura", 28.2f, "2026-09-24 09:00:00");
+    registrarEventoConUmbral(historial, "Presion Atmosferica", 1013.25f, "2026-09-24 08:40:00");
+    registrarEventoConUmbral(historial, "Temperatura", 21.0f, "2026-09-24 09:30:00");
 
     do {
-        printf("\n========================================\n");
-        printf("   SISTEMA ESTACIÓN VIGÍA - FASE 2      \n");
-        printf("========================================\n");
+    
+        printf("   SISTEMA ESTACIÓN VIGÍA - FASE 2 & 3   \n");
+       
         printf("1. Registrar nuevo evento (por umbral)\n");
         printf("2. Mostrar historial (Adelante)\n");
         printf("3. Mostrar historial (Inverso)\n");
@@ -285,7 +388,12 @@ int main() {
         printf("5. Eliminar evento por índice\n");
         printf("6. Calcular estadísticas por sensor (Punteros)\n");
         printf("7. Cambiar umbral de disparo (Actual: %.2f)\n", historial->umbral);
-        printf("8. Salir\n");
+      
+        printf("8. [FASE 3] Enviar comando a actuador (Push a la Pila)\n");
+        printf("9. [FASE 3] Deshacer último comando (Pop / Undo LIFO)\n");
+        printf("10. [FASE 3] Ver último comando en cima (Peek)\n");
+        printf("----------------------------------------\n");
+        printf("11. Salir\n");
         printf("Seleccione una opción: ");
 
         if (scanf("%d", &opcion) != 1) {
@@ -346,15 +454,27 @@ int main() {
                 cambiarUmbral(historial);
                 break;
             case 8:
-                printf("\nSaliendo del programa...\n");
+                printf("\nIngrese el comando/instrucción para el actuador (ej. 'ACTIVAR_SERVO', 'ABRIR_VALVULA'): ");
+                scanf(" %49[^\n]", instruccionActuador);
+                apilarComando(pilaUndo, idComandoContador++, instruccionActuador);
+                break;
+            case 9:
+                deshacerComando(pilaUndo);
+                break;
+            case 10:
+                mostrarUltimoComando(pilaUndo);
+                break;
+            case 11:
+                printf("\nSaliendo del programa Estación Vigía...\n");
                 break;
             default:
                 printf("\nOpción no válida. Intente de nuevo.\n");
         }
-    } while (opcion != 8);
+    } while (opcion != 11);
 
-    // Liberación completa de memoria
+    // Liberación completa de memoria de ambas estructuras
     liberarLista(&historial);
+    liberarPila(&pilaUndo);
 
     return 0;
 }
