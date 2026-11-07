@@ -2,3 +2,5 @@
 *.exe 
 vigia 
 a.out 
+.vscode/
+build/
