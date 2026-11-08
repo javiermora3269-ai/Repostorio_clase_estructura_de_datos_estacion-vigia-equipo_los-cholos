@@ -15,6 +15,8 @@
 
 // MACROS
 #define MINIMUM_CELSIUS_TEMPERATURE -273.15
+#define MINIMUM_TEMPERATURE_BOUND 30
+#define MAXIMUM_TEMPERATURE_BOUND 80
 
 // Helper Functions
 void Input(const short int InferiorLimit, const short int SuperiorLimit, short int* _Option, const char* Question){
@@ -42,7 +44,7 @@ void print_menu(void){
 
 void print_welcoming(void){
     printf("---------------------------------------------------------------\n"
-           "                Bienvenido a la Estaicon Vigia!\n"
+           "                BIENVENIDO A LA ESTACION VIGIA!\n"
            "---------------------------------------------------------------\n\n");
 }
 
@@ -311,14 +313,14 @@ void execute_all_commands(double_list** used_list, size_t n_commands, valve* use
             {
                 used_alarm->is_active = true;
                 strcpy(used_alarm->message, current->stored_command.value_message);
-                printf("[%d] Valvula: %s", i, used_alarm->message);
+                printf("[%d] Alarma: %s", i, used_alarm->message);
                 break;
             }
             case DESACTIVAR_ALARMA:
             {
                 used_alarm->is_active = false;
                 memset(used_alarm->message, '\0', sizeof(used_alarm->message));
-                printf("[%d] Valvula: %s", i, current->stored_command.value_message);
+                printf("[%d] Alarma: %s", i, current->stored_command.value_message);
                 break;
             }
         }
@@ -400,6 +402,7 @@ int main(void){
         }
         case CAPTURAR_LECTURA:
         {
+            if(alarm_messager.is_active) printf("[ALARMA] !!! CUIDADO !!! %s\n\n", alarm_messager.message);
             // Capturando la lectura
             size_t n_elements_buffer = 1;
             lecture* lecture_buffer = (lecture*)malloc(sizeof(lecture) * n_elements_buffer);
@@ -437,7 +440,8 @@ int main(void){
             // Creando nueva lectura
             insert_forward_lectures(&temperature_register, lecture_buffer, n_elements_buffer);
             // Generando alertas si la temperatura se sale de los limites
-            insert_forward_alerts(&registered_alerts, lecture_buffer, n_elements_buffer, 80, 20);
+            insert_forward_alerts(&registered_alerts, lecture_buffer, n_elements_buffer,
+                                  MAXIMUM_TEMPERATURE_BOUND, MINIMUM_TEMPERATURE_BOUND);
 
             if(lecture_buffer != NULL) free(lecture_buffer);
 
@@ -460,15 +464,26 @@ int main(void){
         case ENVIAR_COMANDO: 
         {
             printf("--------------------- Agregando Comandos ----------------------\n");
+
+            short int new_ID = 1;
             // Capturando la lectura
+            unsigned int is_it_first = 0;
             size_t n_elements_buffer = 1;
             command* command_buffer = (command*)malloc(sizeof(command) * n_elements_buffer);
-            do{
-                short int new_ID = 0;
+            if(command_buffer == NULL){
+                printf("\nAn error has ocurred. The command could not be added!\n");
+                break;
+            }
+
+            while(new_ID != 0){
+
+                // Escogiendo Comando
                 printf("\nQue comando desea realizar? \n");
                 print_command_list();
                 Input(SALIR, DESACTIVAR_ALARMA, &new_ID, "");
+                if(new_ID == 0) break;
 
+                is_it_first++;
                 switch(new_ID){
                     case CERRAR_VALVULA:
                     {
@@ -504,9 +519,10 @@ int main(void){
                         command_buffer[n_elements_buffer-1] = new_command;
                         break;
                     }
+                    default: break;
                 }
+                pending_commands++;
 
-                if(new_ID == 0) break;
                 Input(1, 2, &Option, "Desea agregar otro elemento? [ 1: Si | 2: No ]: ");
                 if(Option == 2) break; // Si no se agregan mas elementos, simplemente se rompe el ciclo
 
@@ -515,23 +531,19 @@ int main(void){
                 command* aux_buffer = realloc(command_buffer, sizeof(command) * n_elements_buffer);
                 if(aux_buffer == NULL){
                     printf("Oops! It has ocurred an error trying to make a new lecture.\n");
+                    is_it_first = 0;
                     break;
                 } else command_buffer = aux_buffer;
-                
-            } while(1);
+            }
 
             printf("\n"); // Acomodando la consola
             
             // Creando nueva lectura
-            insert_double_command(&command_list, command_buffer, n_elements_buffer, "");
+            if(is_it_first != 0) insert_double_command(&command_list, command_buffer, n_elements_buffer, "");
             // Generando alertas si la temperatura se sale de los limites
-
             if(command_buffer != NULL) free(command_buffer);
 
-            pending_commands += n_elements_buffer;
-
             printf("\n---------------------------------------------------------------\n\n");
-
             break;
         }
         case EJECUTAR_COMANDOS: 
@@ -540,7 +552,6 @@ int main(void){
             execute_all_commands(&command_list, pending_commands, &presure_valve, &alarm_messager);
             pending_commands = 0;
             printf("\n---------------------------------------------------------------\n\n");
-
             break;
         }
         case DESHACER_COMANDO: 
