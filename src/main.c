@@ -56,13 +56,6 @@ typedef struct forward_list {
     struct forward_list* next;
 } forward_list;
 
-typedef struct double_list {
-    lecture data;
-    char message[50];
-    struct double_list* next;
-    struct double_list* prev;
-} double_list;
-
 // List of Commands
 enum {
     SALIR,

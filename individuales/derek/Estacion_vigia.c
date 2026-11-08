@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #ifndef DEBUG // <- Literalmente esto no sirve de nada, nomas ignorenlo
 
@@ -21,7 +22,7 @@ void Input(const short int InferiorLimit, const short int SuperiorLimit, short i
     printf("%s\n", Question);
     do{
         for(int i = InferiorLimit; i <= SuperiorLimit; i++) printf("| %d ", i);
-        printf("|  -> ");
+        printf("|  ->   ");
 
         scanf(" %hd", _Option);
         Attempts++;
@@ -45,12 +46,23 @@ void print_welcoming(void){
            "---------------------------------------------------------------\n\n");
 }
 
+void print_command_list(void){
+    printf("1: Cerrar Valvula\n2: Abrir Valvula Parcialmente\n3: Abrir Valvula Completamente"
+           "\n4: Activar Alarma\n5: Desactivar Alarma\n0: Salir\n");
+}
+
 // Data Structures
 typedef struct lecture {
     int ID;
     int time;
     double value;
 } lecture;
+
+typedef struct command {
+    int ID;
+    int value_effect;
+    char value_message[50];
+} command;
 
 typedef struct forward_list {
     lecture data;
@@ -59,11 +71,21 @@ typedef struct forward_list {
 } forward_list;
 
 typedef struct double_list {
-    lecture data;
+    command stored_command;
     char message[50];
     struct double_list* next;
     struct double_list* prev;
 } double_list;
+
+typedef struct valve {
+    int opening;    // Es un porcentaje
+    bool is_active; // Indica si esta activa o no
+} valve;
+
+typedef struct alarm {
+    bool is_active;
+    char message[50];
+} alarm;
 
 // List of Commands
 enum {
@@ -76,8 +98,15 @@ enum {
     DESHACER_COMANDO
 };
 
-enum ACTUADOR { // El actuador simulado es una V
-    APAGAR
+enum {
+    // El actuador simulado es una Valvula de Presion
+    CERRAR_VALVULA = 1,
+    ABRIR_VALVULA_PARCIALMENTE,
+    ABRIR_VALVULA_COMPLETAMENTE,
+
+    // El actuador simulado es una Alarma
+    ACTIVAR_ALARMA,
+    DESACTIVAR_ALARMA
 };
 
 // Methods for forward_list
@@ -194,6 +223,154 @@ void free_whole_forward(forward_list** used_list) { // Funcion para liberar la m
             next_forward = current_forward->next;
         }
     }
+    *used_list = NULL;
+}
+
+// Methods for double_list
+
+    // Esta es una funcion auxiliar para agregar elementos a la forward_list
+    // NO USAR DIRECTAMENTE EN EL CODIGO POR FAVOR.
+void _append_new_double_list_command(command* new_command, double_list** used_list, const char* new_message) { 
+    // Si la lista esta vacia, hacer esto
+    if(*used_list == NULL){
+        *used_list = (double_list*)malloc(sizeof(double_list));
+        if(*used_list != NULL){
+            (*used_list)->stored_command = *new_command;
+            strcpy((*used_list)->message, new_message);
+            (*used_list)->next = NULL;
+            (*used_list)->prev = NULL;
+        } else printf("Oops! It has ocurred an error trying to make a new command.\n");
+        return;
+    }
+
+    // Si tiene mas elementos, hacer esto
+    double_list* current = *used_list;
+    while(current->next != NULL){
+        current = current->next;
+    }
+
+    current->next = (double_list*)malloc(sizeof(double_list)); // Se asigna la memoria nueva
+    if(current->next != NULL){
+        current->next->stored_command = *new_command; // Se asigna la lectura
+        strcpy(current->next->message, new_message);
+        current->next->next = NULL;            // Se inicializa el puntero next con NULL
+        current->next->prev = current;         // Se inicializa el puntero prev con current
+    } else printf("Oops! It has ocurred an error trying to make a new command.\n");
+}
+
+void insert_double_command(double_list** used_list, command* new_command, size_t commands_size, const char* message){
+    if(new_command == NULL) {
+        printf("Oops! An error has ocurred when registering the lectures.");
+        return;
+    }
+    for(size_t i = 0; i < commands_size ; i++){
+        _append_new_double_list_command((new_command+i), used_list, message);
+    }
+}
+
+void execute_all_commands(double_list** used_list, size_t n_commands, valve* used_valve, alarm* used_alarm){
+    if(*used_list == NULL){
+        printf("No hay comandos pendientes!\n");
+        return;
+    }
+
+    double_list* current = *used_list;
+    double_list* next_double = NULL;
+    for(int i = 0; i < n_commands; i++){
+        if(current == NULL) break;
+        next_double = current->next;
+
+        switch(current->stored_command.ID){
+            case CERRAR_VALVULA:
+            {
+                printf("[%d] Valvula: %s", i, current->stored_command.value_message);
+                used_valve->is_active = false;
+                break;
+            }
+            case ABRIR_VALVULA_PARCIALMENTE:
+            {
+                used_valve->is_active = true;
+                used_valve->opening   = current->stored_command.value_effect;
+                if(used_valve->opening > 100){
+                    used_valve->opening = 100;
+                } else if (used_valve->opening <= 0){
+                    used_valve->is_active = false;
+                    used_valve->opening   = 0;
+                }
+                printf("[%d] Valvula: %s a un %d Porciento", i, current->stored_command.value_message, current->stored_command.value_effect);
+                break;
+            }
+            case ABRIR_VALVULA_COMPLETAMENTE:
+            {
+                used_valve->is_active = true;
+                used_valve->opening   = 100;
+                printf("[%d] Valvula: %s", i, current->stored_command.value_message);
+                break;
+            }
+            case ACTIVAR_ALARMA:
+            {
+                used_alarm->is_active = true;
+                strcpy(used_alarm->message, current->stored_command.value_message);
+                printf("[%d] Valvula: %s", i, used_alarm->message);
+                break;
+            }
+            case DESACTIVAR_ALARMA:
+            {
+                used_alarm->is_active = false;
+                memset(used_alarm->message, '\0', sizeof(used_alarm->message));
+                printf("[%d] Valvula: %s", i, current->stored_command.value_message);
+                break;
+            }
+        }
+        printf("\n");
+
+        free(current);
+        current = next_double;
+    }
+    *used_list = NULL;
+}
+
+void pop_last_command(double_list** used_list){
+    if(*used_list == NULL) {
+        printf("\nNo hay comandos en la lista.\n\n");
+        return;
+    }
+
+    double_list* current = *used_list;
+
+    while(current->next != NULL){
+        current = current->next;
+    }
+
+    printf("\nSe ha eliminado el comando '%s'\n\n", current->stored_command.value_message);
+    
+    double_list* prev_double = current->prev;
+    
+    if(prev_double != NULL) {
+        prev_double->next = NULL;
+    } else {
+        *used_list = NULL;
+    }
+
+    free(current);
+}
+
+void free_whole_double(double_list** used_list) { // Funcion para liberar la memoria de una completa forward_list
+    if(*used_list == NULL) return;
+
+    // Declarando variables auxiliares
+    double_list* current_forward = *used_list;
+    double_list* next_forward = current_forward->next;
+
+    // Ciclo principal
+    while(current_forward != NULL){
+        free(current_forward);
+        current_forward = next_forward;
+        if(current_forward != NULL){
+            next_forward = current_forward->next;
+        }
+    }
+    *used_list = NULL;
 }
 
 //  E S T A C I O N   V I G I A 
@@ -203,6 +380,10 @@ int main(void){
     int ID_gen = 0;
     forward_list* temperature_register = NULL;
     forward_list* registered_alerts = NULL;
+    double_list*  command_list = NULL;
+    size_t pending_commands = 0;
+    valve presure_valve;
+    alarm alarm_messager;
 
     print_welcoming();
     do { // Aqui comienza el ciclo principal
@@ -212,7 +393,11 @@ int main(void){
     printf("\n");
 
     switch(Option){
-        case SALIR: break;
+        case SALIR: 
+        {
+            printf("Saliendo...\n\n");
+            break;
+        }
         case CAPTURAR_LECTURA:
         {
             // Capturando la lectura
@@ -234,8 +419,8 @@ int main(void){
                 lecture new_lecture = {ID_gen, new_time, new_value};
                 lecture_buffer[n_elements_buffer-1] = new_lecture;
 
-                Input(1, 2, &Option, "Desea agregar otro elemento? [ 1: No | 2: Si ]: ");
-                if(Option == 1) break; // Si no se agregan mas elementos, simplemente se rompe el ciclo
+                Input(1, 2, &Option, "Desea agregar otro elemento? [ 1: Si | 2: No ]: ");
+                if(Option == 2) break; // Si no se agregan mas elementos, simplemente se rompe el ciclo
 
                 // Sino, se agrega un elemento mas con realloc()
                 n_elements_buffer++; 
@@ -265,15 +450,109 @@ int main(void){
             printf("---------------------------------------------------------------\n\n");
             break;
         }
-        case VER_REGISTRO: {
+        case VER_REGISTRO: 
+        {
             printf("------------------ !!! Alertas Generadas !!! ------------------\n");
             read_forward_alerts(&registered_alerts);
             printf("---------------------------------------------------------------\n\n");
             break;
         }
-        case ENVIAR_COMANDO: break;
-        case EJECUTAR_COMANDOS: break;
-        case DESHACER_COMANDO: break;
+        case ENVIAR_COMANDO: 
+        {
+            printf("--------------------- Agregando Comandos ----------------------\n");
+            // Capturando la lectura
+            size_t n_elements_buffer = 1;
+            command* command_buffer = (command*)malloc(sizeof(command) * n_elements_buffer);
+            do{
+                short int new_ID = 0;
+                printf("\nQue comando desea realizar? \n");
+                print_command_list();
+                Input(SALIR, DESACTIVAR_ALARMA, &new_ID, "");
+
+                switch(new_ID){
+                    case CERRAR_VALVULA:
+                    {
+                        command new_command = {CERRAR_VALVULA, 0, "Se ha cerrado la Valvula"};
+                        command_buffer[n_elements_buffer-1] = new_command;
+                        break;
+                    }
+                    case ABRIR_VALVULA_PARCIALMENTE:
+                    {
+                        int opening = 0;
+                        printf("Que porcentaje de apertura neceistas? ");
+                        scanf(" %d", &opening);
+
+                        command new_command = {ABRIR_VALVULA_PARCIALMENTE, opening, "Se abrio la Valvula Parcialmente"};
+                        command_buffer[n_elements_buffer-1] = new_command;
+                        break;
+                    }
+                    case ABRIR_VALVULA_COMPLETAMENTE:
+                    {
+                        command new_command = {ABRIR_VALVULA_COMPLETAMENTE, 100, "Se abrio la Valvula Completamente"};
+                        command_buffer[n_elements_buffer-1] = new_command;
+                        break;
+                    }
+                    case ACTIVAR_ALARMA:
+                    {
+                        command new_command = {ACTIVAR_ALARMA, 0, "Se ha activado la Alarma!"};
+                        command_buffer[n_elements_buffer-1] = new_command;
+                        break;
+                    }
+                    case DESACTIVAR_ALARMA:
+                    {
+                        command new_command = {DESACTIVAR_ALARMA, 0, "Se ha desactivado la Alarma"};
+                        command_buffer[n_elements_buffer-1] = new_command;
+                        break;
+                    }
+                }
+
+                if(new_ID == 0) break;
+                Input(1, 2, &Option, "Desea agregar otro elemento? [ 1: Si | 2: No ]: ");
+                if(Option == 2) break; // Si no se agregan mas elementos, simplemente se rompe el ciclo
+
+                // Sino, se agrega un elemento mas con realloc()
+                n_elements_buffer++; 
+                command* aux_buffer = realloc(command_buffer, sizeof(command) * n_elements_buffer);
+                if(aux_buffer == NULL){
+                    printf("Oops! It has ocurred an error trying to make a new lecture.\n");
+                    break;
+                } else command_buffer = aux_buffer;
+                
+            } while(1);
+
+            printf("\n"); // Acomodando la consola
+            
+            // Creando nueva lectura
+            insert_double_command(&command_list, command_buffer, n_elements_buffer, "");
+            // Generando alertas si la temperatura se sale de los limites
+
+            if(command_buffer != NULL) free(command_buffer);
+
+            pending_commands += n_elements_buffer;
+
+            printf("\n---------------------------------------------------------------\n\n");
+
+            break;
+        }
+        case EJECUTAR_COMANDOS: 
+        {
+            printf("--------------------- Ejecutando Comandos ---------------------\n\n");
+            execute_all_commands(&command_list, pending_commands, &presure_valve, &alarm_messager);
+            pending_commands = 0;
+            printf("\n---------------------------------------------------------------\n\n");
+
+            break;
+        }
+        case DESHACER_COMANDO: 
+        {
+            printf("---------------------- Eliminando Comando ----------------------\n");
+            pop_last_command(&command_list);
+            if(pending_commands > 0){
+                pending_commands--;
+            }
+            printf("---------------------------------------------------------------\n\n");
+            break;
+        }
         default: break;
     }
 
@@ -282,6 +561,7 @@ int main(void){
     // Liberando la memoria
     free_whole_forward(&temperature_register);
     free_whole_forward(&registered_alerts);
+    if(command_list != NULL) free_whole_double(&command_list);
 
     return 0;
 }
