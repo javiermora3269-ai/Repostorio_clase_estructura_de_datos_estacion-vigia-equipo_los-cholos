@@ -597,9 +597,3 @@ void menuPrincipal(EstacionVigia *estacion) {
         }
     } while (opcion != 0);
 }
-    } while (opcion != 0);
-
-    liberarEventos(eventos);
-    cout << "Memoria liberada. \n";
-    return 0;
-}
