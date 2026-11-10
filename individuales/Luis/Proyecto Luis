@@ -1,120 +1,599 @@
-// ==========================
-//  Proyecto Estacion Vigia
-// ==========================
+// =======================================
+// 		ESTACION VIGIA - FASE 3
+// =======================================
 
-#include <iostream>
-#include <cstdlib>  
-#include <cstring>   
-#include <ctime>     
-using namespace std;
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <stdbool.h>
+#define UMBRAL_ALERTA_TEMP 38.0f
+#define MAX_CADENA 64
 
-// struct Evento: tipo de sensor, valor y marca de tiempo
-typedef struct Evento {
-    char   tipo[20];          
-    double valor;            
-    time_t marcaTiempo;      
-    struct Evento *sig;       
-} Evento;
 
-// Registrar un evento al inicio de la lista 
-void registrarEvento(Evento *&head, const char *tipo, double valor) {
-    Evento *nuevo = (Evento *)malloc(sizeof(Evento));
-    if (nuevo == NULL) {
-        cout << "Error: sin memoria.\n";
-        exit(1);
+// ESTRUCTURA PARA REGISTRO DE EVENTOS 
+typedef struct NodoEvento {
+    int idEvento;
+    char tipoSensor[MAX_CADENA];
+    float valorLectura;
+    char timestamp[MAX_CADENA];
+    struct NodoEvento *siguiente;
+} NodoEvento;
+
+// ESTRUCTURA PARA COMANDOS DE ACTUADOR 
+typedef struct NodoComando {
+    int idComando;
+    char instruccion[MAX_CADENA];
+    struct NodoComando *siguiente;
+} NodoComando;
+
+typedef struct {
+    NodoComando *frente;
+    NodoComando *final;
+    int contador;
+} ColaComandos;
+
+// ESTRUCTURA PARA HISTORIAL DE DESHACER 
+typedef struct NodoPila {
+    int idComando;
+    char accionInversa[MAX_CADENA];
+    struct NodoPila *siguiente;
+} NodoPila;
+
+typedef struct {
+    NodoPila *tope;
+    int contador;
+} PilaDeshacer;
+
+// ESTRUCTURA GLOBAL DE LA ESTACION VIGIA
+typedef struct {
+    float *buferLecturas;     // Fase 1: Memoria Dinámica
+    int cantidadLecturas;     
+    int capacidadBufer;      
+    NodoEvento *listaEventos; // Fase 2: Lista Enlazada
+    ColaComandos colaActuador;// Fase 3: Cola FIFO
+    PilaDeshacer pilaUndo;    // Fase 3: Pila LIFO
+    int contadorEventos;      
+    int contadorComandos;    
+} EstacionVigia;
+
+
+// ======================================
+// 	PROTOTIPOS DE FUNCIONES
+// ======================================
+
+// Auxiliares de interfaz y entrada limpia
+void limpiarBufferEntrada(void);
+void obtenerTimestamp(char *buffer, size_t tam);
+int leerEntero(const char *mensaje);
+float leerFloat(const char *mensaje);
+
+// Memoria Dinámica y Búfer (Fase 1)
+void inicializarEstacion(EstacionVigia *estacion, int capacidadInicial);
+void capturarLectura(EstacionVigia *estacion, float valor);
+void mostrarLecturasYEstadisticas(EstacionVigia *estacion);
+void liberarMemoriaEstacion(EstacionVigia *estacion);
+
+// Lista Enlazada de Eventos (Fase 2)
+void registrarEvento(EstacionVigia *estacion, const char *tipoSensor, float valor);
+void mostrarEventos(NodoEvento *cabeza);
+void buscarEventoPorTipo(NodoEvento *cabeza, const char *tipoSensor);
+void eliminarEventoPorId(EstacionVigia *estacion, int id);
+
+// Cola (FIFO) y Pila (LIFO) (Fase 3)
+void inicializarCola(ColaComandos *cola);
+void encolarComando(EstacionVigia *estacion, const char *instruccion);
+bool desencolarComando(ColaComandos *cola, NodoComando *salida);
+void mostrarCola(ColaComandos *cola);
+
+void inicializarPila(PilaDeshacer *pila);
+void pushPila(PilaDeshacer *pila, int idComando, const char *accionInversa);
+bool popPila(PilaDeshacer *pila, NodoPila *salida);
+void mostrarPila(PilaDeshacer *pila);
+
+void procesarSiguienteComando(EstacionVigia *estacion);
+void deshacerUltimoComando(EstacionVigia *estacion);
+
+// Menú e Integración
+void menuPrincipal(EstacionVigia *estacion);
+
+
+// ===========================
+// 		 MAIN
+// ===========================
+
+int main(void) {
+    EstacionVigia estacion;
+    
+    // Inicialización del sistema con capacidad inicial de 5 lecturas
+    inicializarEstacion(&estacion, 5);
+    
+    // Inicio del bucle principal de control
+    menuPrincipal(&estacion);
+    
+    // Liberación total de memoria dinámica antes de finalizar
+    liberarMemoriaEstacion(&estacion);
+    
+    printf("\n[SISTEMA]: Memoria liberada correctamente. Estacion Vigia finalizada.\n");
+    return 0;
+}
+
+// =======================================================
+// 	FUNCIONES AUXILIARES DE ENTRADA Y TIEMPO
+// =======================================================
+
+void limpiarBufferEntrada(void) {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+void obtenerTimestamp(char *buffer, size_t tam) {
+    time_t t = time(NULL);
+    struct tm *tm_info = localtime(&t);
+    strftime(buffer, tam, "%Y-%m-%d %H:%M:%S", tm_info);
+}
+
+int leerEntero(const char *mensaje) {
+    int valor;
+    printf("%s", mensaje);
+    while (scanf("%d", &valor) != 1) {
+        limpiarBufferEntrada();
+        printf("?? Entrada invalida. Ingrese un numero entero: ");
     }
-    strncpy(nuevo->tipo, tipo, sizeof(nuevo->tipo) - 1);
-    nuevo->tipo[sizeof(nuevo->tipo) - 1] = '\0';
-    nuevo->valor = valor;
-    nuevo->marcaTiempo = time(NULL);   // marca de tiempo actual
-    nuevo->sig = head;
-    head = nuevo;
+    limpiarBufferEntrada();
+    return valor;
 }
 
-// Imprime un evento con su fecha y hora
-void imprimirEvento(const Evento *e) {
-    char fecha[30];
-    strftime(fecha, sizeof(fecha), "%Y-%m-%d %H:%M:%S", localtime(&e->marcaTiempo));
-    cout << "[" << fecha << "] " << e->tipo << " = " << e->valor << "\n";
+float leerFloat(const char *mensaje) {
+    float valor;
+    printf("%s", mensaje);
+    while (scanf("%f", &valor) != 1) {
+        limpiarBufferEntrada();
+        printf("?? Entrada invalida. Ingrese un numero flotante: ");
+    }
+    limpiarBufferEntrada();
+    return valor;
 }
 
-// Recorrer la lista de eventos
-void mostrarEventos(Evento *head) {
-    if (head == NULL) {
-        cout << "No hay eventos registrados.\n";
+
+// ===================================================
+// 	FASE 1: PUNTEROS Y GESTIÓN DE MEMORIA DINÁMICA
+// ===================================================
+
+void inicializarEstacion(EstacionVigia *estacion, int capacidadInicial) {
+    estacion->capacidadBufer = capacidadInicial;
+    estacion->cantidadLecturas = 0;
+    
+    // Reserva inicial de memoria con malloc
+    estacion->buferLecturas = (float *)malloc(sizeof(float) * capacidadInicial);
+    if (estacion->buferLecturas == NULL) {
+        fprintf(stderr, "Error: No se pudo asignar memoria para el bufer.\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    estacion->listaEventos = NULL;
+    inicializarCola(&estacion->colaActuador);
+    inicializarPila(&estacion->pilaUndo);
+    estacion->contadorEventos = 1;
+    estacion->contadorComandos = 1;
+}
+
+void capturarLectura(EstacionVigia *estacion, float valor) {
+    // Redimensionamiento del arreglo usando realloc si se alcanza el límite
+    if (estacion->cantidadLecturas >= estacion->capacidadBufer) {
+        estacion->capacidadBufer *= 2; // Estrategia de duplicación de capacidad
+        float *temp = (float *)realloc(estacion->buferLecturas, sizeof(float) * estacion->capacidadBufer);
+        if (temp == NULL) {
+            printf("Error: Fallo la reasignacion de memoria para ampliar el bufer.\n");
+            return;
+        }
+        estacion->buferLecturas = temp;
+        printf("[MEMORIA]: Bufer redimensionado dinamicamente a capacidad: %d\n", estacion->capacidadBufer);
+    }
+    
+    estacion->buferLecturas[estacion->cantidadLecturas] = valor;
+    estacion->cantidadLecturas++;
+    
+    printf("Lectura de sensor [%.2f C] capturada e insertada en el bufer.\n", valor);
+    
+    // Verificación automática de umbral de alerta (Fase 2)
+    if (valor > UMBRAL_ALERTA_TEMP) {
+        printf("ALERTA DE SEGURIDAD! Lectura (%.2f C) excede el umbral (%.2f C).\n", valor, UMBRAL_ALERTA_TEMP);
+        registrarEvento(estacion, "Temperatura Alta", valor);
+    }
+}
+
+void mostrarLecturasYEstadisticas(EstacionVigia *estacion) {
+    if (estacion->cantidadLecturas == 0) {
+        printf("\nEl bufer dinamico esta vacio. No hay lecturas para mostrar.\n");
         return;
     }
-    for (Evento *p = head; p != NULL; p = p->sig)
-        imprimirEvento(p);
+    
+    printf("\n--------------------------------------------------\n");
+    printf("BUFER DINAMICO DE LECTURAS (%d / %d reservados)\n", 
+           estacion->cantidadLecturas, estacion->capacidadBufer);
+    printf("--------------------------------------------------\n");
+    
+    float max = estacion->buferLecturas[0];
+    float min = estacion->buferLecturas[0];
+    float sumaTotal = 0.0f;
+    
+    for (int i = 0; i < estacion->cantidadLecturas; i++) {
+        printf("  Posicion [%d]: %.2f C\n", i, estacion->buferLecturas[i]);
+        if (estacion->buferLecturas[i] > max) max = estacion->buferLecturas[i];
+        if (estacion->buferLecturas[i] < min) min = estacion->buferLecturas[i];
+        sumaTotal += estacion->buferLecturas[i];
+    }
+    
+    float promedio = sumaTotal / estacion->cantidadLecturas;
+    
+    printf("--------------------------------------------------\n");
+    printf("  - Minimo:    %.2f C\n", min);
+    printf("  - Maximo:    %.2f C\n", max);
+    printf("  - Promedio:  %.2f C\n", promedio);
+    printf("--------------------------------------------------\n");
 }
 
-// Buscar eventos de un tipo de sensor
-int buscarEventos(Evento *head, const char *tipo) {
-    int encontrados = 0;
-    for (Evento *p = head; p != NULL; p = p->sig) {
-        if (strcmp(p->tipo, tipo) == 0) {
-            imprimirEvento(p);
-            encontrados++;
+
+// ============================================================================
+// 	FASE 2: LISTA SIMPLEMENTE ENLAZADA (REGISTRO DE EVENTOS/ALERTAS)
+// ============================================================================ 
+
+void registrarEvento(EstacionVigia *estacion, const char *tipoSensor, float valor) {
+    // Creación de un nuevo nodo mediante malloc
+    NodoEvento *nuevo = (NodoEvento *)malloc(sizeof(NodoEvento));
+    if (nuevo == NULL) {
+        printf("Error al asignar memoria para el nodo del evento.\n");
+        return;
+    }
+    
+    nuevo->idEvento = estacion->contadorEventos++;
+    strncpy(nuevo->tipoSensor, tipoSensor, MAX_CADENA - 1);
+    nuevo->tipoSensor[MAX_CADENA - 1] = '\0';
+    nuevo->valorLectura = valor;
+    obtenerTimestamp(nuevo->timestamp, sizeof(nuevo->timestamp));
+    nuevo->siguiente = NULL;
+    
+    // Inserción al final de la lista enlazada
+    if (estacion->listaEventos == NULL) {
+        estacion->listaEventos = nuevo;
+    } else {
+        NodoEvento *actual = estacion->listaEventos;
+        while (actual->siguiente != NULL) {
+            actual = actual->siguiente;
         }
+        actual->siguiente = nuevo;
     }
-    return encontrados;
+    
+    printf("Evento %d registrado exitosamente en la lista enlazada.\n", nuevo->idEvento);
 }
 
-// Liberar todos los eventos (sin fugas)
-void liberarEventos(Evento *&head) {
-    Evento *p = head;
-    while (p != NULL) {
-        Evento *siguiente = p->sig;
-        free(p);
-        p = siguiente;
+void mostrarEventos(NodoEvento *cabeza) {
+    if (cabeza == NULL) {
+        printf("\nEl registro de eventos/alertas esta totalmente vacio.\n");
+        return;
     }
-    head = NULL;
+    
+    printf("\n--------------------------------------------------\n");
+    printf("REGISTRO DE EVENTOS Y ALERTAS \n");
+    printf("-----------------------------------------------------\n");
+    
+    NodoEvento *actual = cabeza;
+    while (actual != NULL) {
+        printf(" ID: %-3d | Sensor: %-18s | Valor: %6.2f | Fecha: %s\n",
+               actual->idEvento, actual->tipoSensor, actual->valorLectura, actual->timestamp);
+        actual = actual->siguiente;
+    }
+    printf("-------------------------------------------------------------\n");
 }
 
-int main() {
-    Evento *eventos = NULL;
+void buscarEventoPorTipo(NodoEvento *cabeza, const char *tipoSensor) {
+    if (cabeza == NULL) {
+        printf("Lista vacia. No se puede realizar la busqueda.\n");
+        return;
+    }
+    
+    printf("\nBuscando eventos del tipo: '%s'...\n", tipoSensor);
+    NodoEvento *actual = cabeza;
+    bool encontrado = false;
+    
+    while (actual != NULL) {
+        if (strstr(actual->tipoSensor, tipoSensor) != NULL) {
+            printf("  -> Encontrado ID: %d | Valor: %.2f | Fecha: %s\n",
+                   actual->idEvento, actual->valorLectura, actual->timestamp);
+            encontrado = true;
+        }
+        actual = actual->siguiente;
+    }
+    
+    if (!encontrado) {
+        printf("No se encontraron coincidencias para '%s'.\n", tipoSensor);
+    }
+}
+
+void eliminarEventoPorId(EstacionVigia *estacion, int id) {
+    if (estacion->listaEventos == NULL) {
+        printf("No hay eventos registrados para eliminar.\n");
+        return;
+    }
+    
+    NodoEvento *actual = estacion->listaEventos;
+    NodoEvento *anterior = NULL;
+    
+    while (actual != NULL && actual->idEvento != id) {
+        anterior = actual;
+        actual = actual->siguiente;
+    }
+    
+    if (actual == NULL) {
+        printf("No se encontro ningun evento con ID %d.\n", id);
+        return;
+    }
+    
+    // Reenlazamiento de punteros
+    if (anterior == NULL) {
+        estacion->listaEventos = actual->siguiente;
+    } else {
+        anterior->siguiente = actual->siguiente;
+    }
+    
+    // Liberación del nodo de memoria dinámica
+    free(actual);
+    printf("Evento ID %d eliminado y memoria liberada correctamente.\n", id);
+}
+
+
+// ==================================================================
+//	FASE 3: PILAS Y COLAS (GESTIÓN DE ACTUADORES Y DESHACER)
+// ==================================================================
+
+// COLA FIFO 
+void inicializarCola(ColaComandos *cola) {
+    cola->frente = NULL;
+    cola->final = NULL;
+    cola->contador = 0;
+}
+
+void encolarComando(EstacionVigia *estacion, const char *instruccion) {
+    NodoComando *nuevo = (NodoComando *)malloc(sizeof(NodoComando));
+    if (nuevo == NULL) {
+        printf("Error de memoria al encolar comando.\n");
+        return;
+    }
+    
+    nuevo->idComando = estacion->contadorComandos++;
+    strncpy(nuevo->instruccion, instruccion, MAX_CADENA - 1);
+    nuevo->instruccion[MAX_CADENA - 1] = '\0';
+    nuevo->siguiente = NULL;
+    
+    if (estacion->colaActuador.final == NULL) {
+        estacion->colaActuador.frente = nuevo;
+        estacion->colaActuador.final = nuevo;
+    } else {
+        estacion->colaActuador.final->siguiente = nuevo;
+        estacion->colaActuador.final = nuevo;
+    }
+    estacion->colaActuador.contador++;
+    
+    printf("Comando #%d ('%s') anadido a la Cola de Actuadores.\n", nuevo->idComando, nuevo->instruccion);
+}
+
+bool desencolarComando(ColaComandos *cola, NodoComando *salida) {
+    if (cola->frente == NULL) return false;
+    
+    NodoComando *temp = cola->frente;
+    *salida = *temp; // Copiar datos de salida
+    
+    cola->frente = cola->frente->siguiente;
+    if (cola->frente == NULL) {
+        cola->final = NULL;
+    }
+    
+    free(temp);
+    cola->contador--;
+    return true;
+}
+
+void mostrarCola(ColaComandos *cola) {
+    if (cola->frente == NULL) {
+        printf("\nCola de actuadores: Vacia.\n");
+        return;
+    }
+    
+    printf("\nCOLA DE COMANDOS PENDIENTES (Total: %d)\n", cola->contador);
+    NodoComando *actual = cola->frente;
+    int pos = 1;
+    while (actual != NULL) {
+        printf("  %d. [ID: %d] Instruccion: %s\n", pos++, actual->idComando, actual->instruccion);
+        actual = actual->siguiente;
+    }
+}
+
+// PILA LIFO
+void inicializarPila(PilaDeshacer *pila) {
+    pila->tope = NULL;
+    pila->contador = 0;
+}
+
+void pushPila(PilaDeshacer *pila, int idComando, const char *accionInversa) {
+    NodoPila *nuevo = (NodoPila *)malloc(sizeof(NodoPila));
+    if (nuevo == NULL) {
+        printf("Error de memoria al apilar accion de deshacer.\n");
+        return;
+    }
+    
+    nuevo->idComando = idComando;
+    strncpy(nuevo->accionInversa, accionInversa, MAX_CADENA - 1);
+    nuevo->accionInversa[MAX_CADENA - 1] = '\0';
+    
+    nuevo->siguiente = pila->tope;
+    pila->tope = nuevo;
+    pila->contador++;
+}
+
+bool popPila(PilaDeshacer *pila, NodoPila *salida) {
+    if (pila->tope == NULL) return false;
+    
+    NodoPila *temp = pila->tope;
+    *salida = *temp;
+    
+    pila->tope = pila->tope->siguiente;
+    free(temp);
+    pila->contador--;
+    return true;
+}
+
+void mostrarPila(PilaDeshacer *pila) {
+    if (pila->tope == NULL) {
+        printf("Historial de Deshacer: Vacio.\n");
+        return;
+    }
+    
+    printf("\nHISTORIAL PARA DESHACER (Total: %d)\n", pila->contador);
+    NodoPila *actual = pila->tope;
+    while (actual != NULL) {
+        printf("  [Tope -> ID: %d] Accion de reversion: %s\n", actual->idComando, actual->accionInversa);
+        actual = actual->siguiente;
+    }
+}
+
+// LÓGICA DE CONTROL DE ACTUADORES 
+void procesarSiguienteComando(EstacionVigia *estacion) {
+    NodoComando cmd;
+    if (!desencolarComando(&estacion->colaActuador, &cmd)) {
+        printf("\nNo hay comandos pendientes en la cola para ejecutar.\n");
+        return;
+    }
+    
+    printf("\nEjecutando comando %d: '%s'...\n", cmd.idComando, cmd.instruccion);
+    
+    // Determinar la acción inversa para guardar en la pila de Deshacer
+    char accionInversa[MAX_CADENA];
+    if (strstr(cmd.instruccion, "Encender") != NULL) {
+        snprintf(accionInversa, sizeof(accionInversa), "Apagar componente del Cmd %d", cmd.idComando);
+    } else if (strstr(cmd.instruccion, "Abrir") != NULL) {
+        snprintf(accionInversa, sizeof(accionInversa), "Cerrar componente del Cmd %d", cmd.idComando);
+    } else {
+        snprintf(accionInversa, sizeof(accionInversa), "Revertir estado de Cmd %d", cmd.idComando);
+    }
+    
+    // Guardar en la pila LIFO
+    pushPila(&estacion->pilaUndo, cmd.idComando, accionInversa);
+    printf("Comando ejecutado y registrado en la Pila de Deshacer.\n");
+}
+
+void deshacerUltimoComando(EstacionVigia *estacion) {
+    NodoPila undo;
+    if (!popPila(&estacion->pilaUndo, &undo)) {
+        printf("\nNo hay comandos ejecutados para deshacer.\n");
+        return;
+    }
+    
+    printf("\nDESHACIENDO ULTIMA ACCION [Cmd ID %d]: Executing '%s'\n", undo.idComando, undo.accionInversa);
+    printf("Accion deshecha con exito.\n");
+}
+
+
+// ================================================
+// 	LIBERACIÓN DE MEMORIA COMPLETA
+// ================================================
+
+void liberarMemoriaEstacion(EstacionVigia *estacion) {
+    // 1. Liberar búfer dinámico de arreglo
+    if (estacion->buferLecturas != NULL) {
+        free(estacion->buferLecturas);
+        estacion->buferLecturas = NULL;
+    }
+    
+    // 2. Liberar nodos de la Lista Enlazada de Eventos
+    NodoEvento *actualEvento = estacion->listaEventos;
+    while (actualEvento != NULL) {
+        NodoEvento *temp = actualEvento;
+        actualEvento = actualEvento->siguiente;
+        free(temp);
+    }
+    estacion->listaEventos = NULL;
+    
+    // 3. Liberar nodos de la Cola de Comandos
+    NodoComando cmdSalida;
+    while (desencolarComando(&estacion->colaActuador, &cmdSalida));
+    
+    // 4. Liberar nodos de la Pila de Deshacer
+    NodoPila pilaSalida;
+    while (popPila(&estacion->pilaUndo, &pilaSalida));
+}
+
+
+// ====================================================
+// 	MENÚ PRINCIPAL INTEGRADO (FASES 1-3)
+// ====================================================
+
+void menuPrincipal(EstacionVigia *estacion) {
     int opcion;
-
+    
     do {
-        cout << "\n===== ESTACION VIGIA: LISTA DE EVENTOS =====\n";
-        cout << "1. Registrar un evento\n";
-        cout << "2. Mostrar todos los eventos\n";
-        cout << "3. Buscar eventos por tipo de sensor\n";
-        cout << "0. Salir (libera la memoria)\n";
-        cout << "Opcion: ";
-        cin >> opcion;
-
+        printf("\n===== ESTACION VIGIA =====\n");
+        printf("1. Capturar lecturas (buffer dinamico)\n");
+        printf("2. Ver lecturas y estadisticas\n");
+        printf("3. Ver registro de eventos/alertas\n");
+        printf("4. Enviar comando al actuador (cola)\n");
+        printf("5. Ejecutar comandos pendientes\n");
+        printf("6. Deshacer ultimo comando (pila)\n");
+        printf("0. Salir (libera toda la memoria)\n");
+        printf("==========================\n");
+        
+        opcion = leerEntero("Opcion: ");
+        
         switch (opcion) {
             case 1: {
-                char tipo[20];
-                double lectura;
-                cout << "Tipo de sensor (una palabra, ej. temperatura): ";
-                cin >> tipo;
-                cout << "Valor medido: ";
-                cin >> lectura;
-                registrarEvento(eventos, tipo, lectura);
-                cout << "Evento registrado.\n";
+                float lectura = leerFloat("Ingrese el valor de la lectura de temperatura: ");
+                capturarLectura(estacion, lectura);
                 break;
             }
             case 2:
-                mostrarEventos(eventos);
+                mostrarLecturasYEstadisticas(estacion);
                 break;
             case 3: {
-                char tipo[20];
-                cout << "Tipo de sensor a buscar: ";
-                cin >> tipo;
-                if (buscarEventos(eventos, tipo) == 0)
-                    cout << "No hay eventos de tipo \"" << tipo << "\".\n";
+                int subOp;
+                printf("\n--- GESTION DE EVENTOS ---\n");
+                printf(" 1. Ver todos los eventos registrados\n");
+                printf(" 2. Buscar evento por tipo de sensor\n");
+                printf(" 3. Eliminar evento por ID\n");
+                subOp = leerEntero("Seleccione una opcion: ");
+                
+                if (subOp == 1) {
+                    mostrarEventos(estacion->listaEventos);
+                } else if (subOp == 2) {
+                    char tipo[MAX_CADENA];
+                    printf("Ingrese el tipo de sensor a buscar: ");
+                    fgets(tipo, sizeof(tipo), stdin);
+                    tipo[strcspn(tipo, "\n")] = 0; 
+                    buscarEventoPorTipo(estacion->listaEventos, tipo);
+                } else if (subOp == 3) {
+                    int id = leerEntero("Ingrese ID del evento a eliminar: ");
+                    eliminarEventoPorId(estacion, id);
+                }
                 break;
             }
+            case 4: {
+                char cmdText[MAX_CADENA];
+                printf("Ingrese instruccion para el actuador (Ej: Encender Ventilador, Mover Servo): ");
+                fgets(cmdText, sizeof(cmdText), stdin);
+                cmdText[strcspn(cmdText, "\n")] = 0;
+                encolarComando(estacion, cmdText);
+                break;
+            }
+            case 5:
+                procesarSiguienteComando(estacion);
+                break;
+            case 6:
+                deshacerUltimoComando(estacion);
+                break;
             case 0:
+                printf("\nCerrando sesion en Estacion Vigia...\n");
                 break;
             default:
-                cout << "Opcion no valida.\n";
+                printf("Opcion no valida. Intente de nuevo.\n");
         }
     } while (opcion != 0);
-
-    liberarEventos(eventos);
-    cout << "Memoria liberada. \n";
-    return 0;
 }
