@@ -1,0 +1,227 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#define NS 4
+static const char *SENSOR[NS] = {"Temperatura", "Humedad", "Distancia", "Luz"}; /* S7 */
+static const float UMBRAL[NS] = {35, 80, 200, 900};
+static const char *ACT[3] = {"Ventilador", "Alarma", "Compuerta"};
+static const int ACT_DE[NS] = {0, 2, 1, 1};
+
+typedef struct { float *d; int n, cap; } Buffer;             /* Fase 1 */
+typedef struct { int sensor; float valor; time_t t; } Evento;    /* Fase 2 */
+typedef struct NodoEv { Evento ev; struct NodoEv *ant, *sig; } NodoEv;
+typedef struct { NodoEv *head, *tail; int n; } ListaEv;
+typedef struct { int act, antes, nuevo; } Cmd;                    /* Fase 3 */
+typedef struct NodoCmd { Cmd c; struct NodoCmd *sig; } NodoCmd;
+typedef struct { NodoCmd *frente, *fin; } Cola;
+typedef struct { Buffer b; ListaEv ev; NodoCmd *pila; Cola cola; int estado[3]; } Est;
+
+/* ---------- entrada ---------- */
+static int leer_f(const char *m, float *o) { char l[64]; printf("%s", m);
+    return fgets(l, sizeof l, stdin) && sscanf(l, "%f", o) == 1; }
+static int leer_i(const char *m, int *o) { char l[64]; printf("%s", m);
+    return fgets(l, sizeof l, stdin) && sscanf(l, "%d", o) == 1; }
+
+/* ---------- S7: paso por referencia ---------- */
+static void intercambiar(int *x, int *y) { int t = *x; *x = *y; *y = t; }
+static int corregir(float *x) { if (x && *x < 0) { *x = 0; return 1; } return 0; }
+
+/* ---------- S6: estadisticas solo con punteros ---------- */
+static int stats(const float *p, int n, float *prom, float *mx, float *mn) {
+    if (!p || n <= 0) return 0;
+    float s = 0; *mx = *mn = *p;
+    for (const float *q = p; q < p + n; q++) {
+        s += *q; if (*q > *mx) *mx = *q; if (*q < *mn) *mn = *q; }
+    *prom = s / n; return 1; }
+
+/* ---------- S8 + S2: bufer dinamico y operaciones de arreglo ---------- */
+static int buf_add(Buffer *b, float v) {
+    if (b->n == b->cap) {                         /* crece con realloc */
+        float *t = (float *)realloc(b->d, 2 * b->cap * sizeof(float));
+        if (!t) return 0;
+        b->d = t; b->cap *= 2; }
+    b->d[b->n++] = v; return 1; }
+static int buf_buscar(const Buffer *b, float v, int *cmp) {  /* con break */
+    *cmp = 0;
+    for (int i = 0; i < b->n; i++) { (*cmp)++; if (b->d[i] == v) return i; }
+    return -1; }
+static int buf_insertar(Buffer *b, int pos, float v) {
+    if (pos < 0 || pos > b->n || !buf_add(b, 0)) return 0;
+    for (int i = b->n - 1; i > pos; i--) b->d[i] = b->d[i - 1];  /* desplaza der */
+    b->d[pos] = v; return 1; }
+static int buf_eliminar(Buffer *b, float v) {
+    int c, p = buf_buscar(b, v, &c); if (p < 0) return 0;
+    for (int i = p; i < b->n - 1; i++) b->d[i] = b->d[i + 1];    /* desplaza izq */
+    b->n--; return 1; }
+static void buf_mostrar(const Buffer *b) {
+    printf("Bufer (%d/%d): ", b->n, b->cap);
+    for (const float *p = b->d; p < b->d + b->n; p++) printf("%.1f ", *p);
+    printf("\n"); }
+
+/* ---------- S10-S11: lista doble de eventos (CON CASTING EXPLICITO) ---------- */
+static void ev_insertar(ListaEv *l, Evento e) {             /* al inicio O(1) */
+    NodoEv *n = (NodoEv *)malloc(sizeof *n); if (!n) return;
+    n->ev = e; n->ant = NULL; n->sig = l->head;
+    if (l->head) l->head->ant = n; else l->tail = n;
+    l->head = n; l->n++; }
+static int ev_eliminar(ListaEv *l, int pos) {
+    if (pos < 0 || pos >= l->n) return 0;
+    NodoEv *p = l->head; while (pos--) p = p->sig;
+    if (p->ant) p->ant->sig = p->sig; else l->head = p->sig;
+    if (p->sig) p->sig->ant = p->ant; else l->tail = p->ant;
+    free(p); l->n--; return 1; }
+static void ev_print(int i, const Evento *e) {
+    printf("  [%d] %-12s %.1f (umbral %.0f)\n", i, SENSOR[e->sensor], e->valor, UMBRAL[e->sensor]); }
+static void ev_mostrar(const ListaEv *l) {
+    int i = 0; printf("Eventos adelante:\n");
+    for (NodoEv *p = l->head; p; p = p->sig) ev_print(i++, &p->ev);
+    printf("Eventos atras:\n");
+    for (NodoEv *p = l->tail; p; p = p->ant) ev_print(--i, &p->ev); }
+
+/* ---------- S12: pila (undo) y cola de comandos (CON CASTING EXPLICITO) ---------- */
+static void apilar(NodoCmd **top, Cmd c) {                    /* ** : S6 */
+    NodoCmd *n = (NodoCmd *)malloc(sizeof *n); if (!n) return;
+    n->c = c; n->sig = *top; *top = n; }
+static int desapilar(NodoCmd **top, Cmd *o) {
+    if (!*top) return 0;
+    NodoCmd *n = *top; *o = n->c; *top = n->sig; free(n); return 1; }
+static void encolar(Cola *q, Cmd c) {
+    NodoCmd *n = (NodoCmd *)malloc(sizeof *n); if (!n) return;
+    n->c = c; n->sig = NULL;
+    if (q->fin) q->fin->sig = n; else q->frente = n;
+    q->fin = n; }
+static int desencolar(Cola *q, Cmd *o) {
+    if (!q->frente) return 0;
+    NodoCmd *n = q->frente; *o = n->c; q->frente = n->sig;
+    if (!q->frente) q->fin = NULL;
+    free(n); return 1; }
+
+/* ---------- logica ---------- */
+static void registrar(Est *e, int s, float v) {
+    if (corregir(&v)) printf("  Lectura negativa corregida al 0\n");
+    buf_add(&e->b, v);
+    if (v > UMBRAL[s]) {
+        Evento ev = {s, v, time(NULL)}; ev_insertar(&e->ev, ev);
+        Cmd c = {ACT_DE[s], 0, 1}; encolar(&e->cola, c);
+        printf("  ! Umbral superado en %s -> evento + comando %s ON\n", SENSOR[s], ACT[c.act]);
+    } }
+
+/* ---------- acciones del menu (S7: punteros a funcion) ---------- */
+static void a_lectura(Est *e) {
+    int s; float v;
+    for (int i = 0; i < NS; i++) printf("%d)%s ", i, SENSOR[i]);
+    if (!leer_i("\nSensor: ", &s) || s < 0 || s >= NS || !leer_f("Valor: ", &v)) { puts("Invalido"); return; }
+    registrar(e, s, v); }
+static void a_simular(Est *e) {
+    int n; if (!leer_i("Cuantas? ", &n) || n < 1) return;
+    while (n--) { int s = rand() % NS; float v = (float)(rand() % 1000) / 1000 * UMBRAL[s] * 1.3f;
+        if (rand() % 10 == 0) v = -v;
+        registrar(e, s, v); } }
+static void a_stats(Est *e) {
+    float p, mx, mn; buf_mostrar(&e->b);
+    if (stats(e->b.d, e->b.n, &p, &mx, &mn)) printf("Prom=%.2f Max=%.2f Min=%.2f\n", p, mx, mn); }
+static void a_buscar(Est *e) {
+    float v; int c; if (!leer_f("Valor: ", &v)) return;
+    int p = buf_buscar(&e->b, v, &c);
+    printf("%s (pos %d) con %d comparaciones (break); recorrer todo serian %d\n",
+            p >= 0 ? "Encontrado" : "No esta", p, c, e->b.n); }
+static void a_insertar(Est *e) {
+    float v; int p; if (!leer_f("Valor: ", &v) || !leer_i("Posicion: ", &p)) return;
+    if (buf_insertar(&e->b, p, v)) buf_mostrar(&e->b); else puts("Posicion invalida"); }
+static void a_eliminar(Est *e) {
+    float v; if (!leer_f("Valor: ", &v)) return;
+    if (buf_eliminar(&e->b, v)) buf_mostrar(&e->b); else puts("No existe"); }
+static void a_eventos(Est *e) { ev_mostrar(&e->ev); }
+static void a_buscar_ev(Est *e) {
+    int s, i = 0; if (!leer_i("Sensor (0-3): ", &s)) return;
+    for (NodoEv *p = e->ev.head; p; p = p->sig, i++) if (p->ev.sensor == s) ev_print(i, &p->ev); }
+static void a_elim_ev(Est *e) {
+    int p; if (leer_i("Posicion: ", &p)) puts(ev_eliminar(&e->ev, p) ? "Eliminado" : "Invalida"); }
+
+/* ---------- S11: lista circular completada ---------- */
+static void a_circular(Est *e) {                            
+    if (!e->ev.head || e->ev.n == 0) { puts("Sin eventos"); return; }
+    e->ev.tail->sig = e->ev.head;                           /* cerrar el ciclo */
+    NodoEv *p = e->ev.head;
+    printf("Recorrido circular de eventos (%d elementos):\n", e->ev.n);
+    for (int i = 0; i < e->ev.n; i++) {
+        ev_print(i, &p->ev);
+        p = p->sig;
+    }
+    e->ev.tail->sig = NULL;                                 /* restaurar lista normal */
+}
+
+/* ---------- Funcion Principal (Menu) ---------- */
+typedef void (*AccionMenu)(Est *);
+
+int main(void) {
+    srand((unsigned int)time(NULL));
+    Est est;
+    est.b.n = 0;
+    est.b.cap = 4;
+    est.b.d = (float *)malloc(est.b.cap * sizeof(float));
+    if (!est.b.d) return 1;
+
+    est.ev.head = NULL;
+    est.ev.tail = NULL;
+    est.ev.n = 0;
+    est.pila = NULL;
+    est.cola.frente = NULL;
+    est.cola.fin = NULL;
+
+    AccionMenu acciones[] = {
+        a_lectura,   // 0
+        a_simular,   // 1
+        a_stats,     // 2
+        a_buscar,    // 3
+        a_insertar,  // 4
+        a_eliminar,  // 5
+        a_eventos,   // 6
+        a_buscar_ev, // 7
+        a_elim_ev,   // 8
+        a_circular   // 9
+    };
+
+    int op;
+    do {
+        printf("\n=== SISTEMA VIGIA ===\n");
+        printf("0) Registrar lectura\n");
+        printf("1) Simular lecturas aleatorias\n");
+        printf("2) Estadisticas del bufer\n");
+        printf("3) Buscar en bufer\n");
+        printf("4) Insertar en bufer\n");
+        printf("5) Eliminar de bufer\n");
+        printf("6) Mostrar eventos\n");
+        printf("7) Buscar eventos por sensor\n");
+        printf("8) Eliminar evento\n");
+        printf("9) Recorrido circular\n");
+        printf("10) Salir\n");
+        if (!leer_i("Opcion: ", &op)) break;
+        if (op >= 0 && op <= 9) {
+            acciones[op](&est);
+        } else if (op != 10) {
+            puts("Opcion invalida");
+        }
+    } while (op != 10);
+
+    /* Liberar memoria dinamica */
+    free(est.b.d);
+    while (est.ev.head) {
+        NodoEv *sig = est.ev.head->sig;
+        free(est.ev.head);
+        est.ev.head = sig;
+    }
+    while (est.pila) {
+        NodoCmd *sig = est.pila->sig;
+        free(est.pila);
+        est.pila = sig;
+    }
+    while (est.cola.frente) {
+        NodoCmd *sig = est.cola.frente->sig;
+        free(est.cola.frente);
+        est.cola.frente = sig;
+    }
+
+    return 0;
+}
