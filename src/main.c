@@ -23,8 +23,7 @@ void Input(const short int InferiorLimit, const short int SuperiorLimit, short i
     printf("%s\n", Question);
     do
     {
-        for (int i = InferiorLimit; i <= SuperiorLimit; i++)
-            printf("| %d ", i);
+        for (int i = InferiorLimit; i <= SuperiorLimit; i++) printf("| %d ", i);
         printf("|  -> ");
 
         scanf(" %hd", _Option);
@@ -53,15 +52,13 @@ void print_welcoming(void)
 }
 
 // D A T A   S T R U C T U R E S
-typedef struct lecture
-{
+typedef struct lecture {
     int ID;
     int time;
     double value;
 } lecture;
 
-typedef struct forward_list
-{
+typedef struct forward_list {
     lecture data;
     char message[50];
     struct forward_list *next;
@@ -95,15 +92,13 @@ void _append_new_forward_list_lecture(lecture *new_lecture, forward_list **used_
             strcpy((*used_list)->message, new_message);
             (*used_list)->next = NULL;
         }
-        else
-            printf("Oops! It has ocurred an error trying to make a new lecture.\n");
+        else printf("Oops! It has ocurred an error trying to make a new lecture.\n");
         return;
     }
 
     // Si tiene mas elementos, hacer esto
     forward_list *current = *used_list;
-    while (current->next != NULL)
-    {
+    while (current->next != NULL) {
         current = current->next;
     }
 
@@ -114,20 +109,17 @@ void _append_new_forward_list_lecture(lecture *new_lecture, forward_list **used_
         strcpy(current->next->message, new_message);
         current->next->next = NULL; // Se inicializa el puntero next
     }
-    else
-        printf("Oops! It has ocurred an error trying to make a new lecture.\n");
+    else printf("Oops! It has ocurred an error trying to make a new lecture.\n");
 }
 
 // Inserta las lecturas del buffer dinamico a la lista enlazada de lecturas
 void insert_forward_lectures(forward_list **used_list, lecture *new_lecture, size_t lectures_size)
 {
-    if (new_lecture == NULL)
-    {
+    if (new_lecture == NULL) {
         printf("Oops! An error has ocurred when registering the lectures.");
         return;
     }
-    for (size_t i = 0; i < lectures_size; i++)
-    {
+    for (size_t i = 0; i < lectures_size; i++) {
         _append_new_forward_list_lecture((new_lecture + i), used_list, "");
     }
 }
@@ -135,15 +127,13 @@ void insert_forward_lectures(forward_list **used_list, lecture *new_lecture, siz
 // Inserta las lecturas del buffer dinamico a la lista enlazada de alertas cuando pasan de cierto umbral
 void insert_forward_alerts(forward_list **used_list, lecture *new_lecture, size_t lectures_size, double upper_bound, double lower_bound)
 {
-    if (new_lecture == NULL)
-    {
+    if (new_lecture == NULL) {
         printf("Oops! An error has ocurred when registering the lectures.");
         return;
     }
     for (size_t i = 0; i < lectures_size; i++)
     {
-        if (new_lecture[i].value > upper_bound || new_lecture[i].value < lower_bound)
-        {
+        if (new_lecture[i].value > upper_bound || new_lecture[i].value < lower_bound) {
             _append_new_forward_list_lecture((new_lecture + i), used_list, "La temperatura ha sobrepasado los limites!");
         }
     }
@@ -152,8 +142,7 @@ void insert_forward_alerts(forward_list **used_list, lecture *new_lecture, size_
 // Funcion para leer todas las lecturas de la forward_list
 void read_forward_lectures(forward_list **used_list)
 {
-    if (*used_list == NULL)
-    {
+    if (*used_list == NULL) {
         printf("\nNo hay lecturas registradas!\n\n");
         return;
     }
@@ -163,10 +152,8 @@ void read_forward_lectures(forward_list **used_list)
     {
         printf("\n[%d] [Hora: %d] Lectura: %.2lf", current->data.ID, current->data.time, current->data.value);
 
-        if (current->data.value > max)
-            max = current->data.value;
-        if (current->data.value < min)
-            min = current->data.value;
+        if (current->data.value > max) max = current->data.value;
+        if (current->data.value < min) min = current->data.value;
 
         mean += current->data.value;
         n_lectures++;
@@ -179,8 +166,7 @@ void read_forward_lectures(forward_list **used_list)
 // Funcion para leer todas las alertas generadas de la forward_list
 void read_forward_alerts(forward_list **used_list)
 { // Funcion para leer todas las lecturas de la forward_list
-    if (*used_list == NULL)
-    {
+    if (*used_list == NULL) {
         printf("\nNo hay alertas registradas!\n\n");
         return;
     }
@@ -191,10 +177,8 @@ void read_forward_alerts(forward_list **used_list)
         printf("\n[%d] [Hora: %d] Lectura: %.2lf | %s",
                current->data.ID, current->data.time, current->data.value, current->message);
 
-        if (current->data.value > max)
-            max = current->data.value;
-        if (current->data.value < min)
-            min = current->data.value;
+        if (current->data.value > max) max = current->data.value;
+        if (current->data.value < min) min = current->data.value;
 
         mean += current->data.value;
         n_lectures++;
@@ -206,8 +190,7 @@ void read_forward_alerts(forward_list **used_list)
 
 void free_whole_forward(forward_list **used_list)
 { // Funcion para liberar la memoria de una completa forward_list
-    if (*used_list == NULL)
-        return;
+    if (*used_list == NULL) return;
 
     // Declarando variables auxiliares
     forward_list *current_forward = *used_list;
@@ -232,10 +215,12 @@ void init_Queue(queue *q)
     q->front = NULL;
     q->rear = NULL;
 }
+
 void init_Stack(stack *s)
 {
     s->top = NULL;
 }
+
 void enqueue(queue *q, int ID, const char *action)
 {
     comandNode *newNode = (comandNode *)malloc(sizeof(comandNode));
@@ -260,6 +245,7 @@ void enqueue(queue *q, int ID, const char *action)
         q->rear = newNode;
     }
 }
+
 void push(stack *s, int ID, const char *action)
 {
     comandNode *newNode = (comandNode *)malloc(sizeof(comandNode));
@@ -274,6 +260,7 @@ void push(stack *s, int ID, const char *action)
     newNode->next = s->top;
     s->top = newNode;
 }
+
 void execute_command(queue *q, stack *s)
 {
     if (q == NULL || s == NULL || q->front == NULL)
@@ -294,6 +281,7 @@ void execute_command(queue *q, stack *s)
     s->top = temp;
     printf("Comando ejecutado y movido a la pila de deshacer.\n");
 }
+
 void undo_command(stack *s)
 {
     if (s == NULL || s->top == NULL)
@@ -307,6 +295,7 @@ void undo_command(stack *s)
     free(temp);
     printf("Comando deshecho exitosamente.\n");
 }
+
 void free_queue(queue *q)
 {
     if (q == NULL)
@@ -319,6 +308,7 @@ void free_queue(queue *q)
     }
     q->rear = NULL;
 }
+
 void free_stack(stack *s)
 {
     if (s == NULL)
@@ -335,7 +325,6 @@ void free_stack(stack *s)
 //  E S T A C I O N   V I G I A
 int main(void)
 {
-
     short int Option = 0;
     int ID_gen = 0;
     forward_list *temperature_register = NULL;
@@ -357,18 +346,15 @@ int main(void)
         Input(SALIR, DESHACER_COMANDO, &Option, "Escoje la operacion que desea realizar: ");
         printf("\n");
 
-        switch (Option)
-        {
-        case SALIR:
-            break;
+        switch (Option){
+        case SALIR: break;
         case CAPTURAR_LECTURA:
         {
             // Capturando la lectura
             short int sub_option = 0;
             size_t n_elements_buffer = 1;
             lecture *lecture_buffer = (lecture *)malloc(sizeof(lecture) * n_elements_buffer);
-            if (lecture_buffer == NULL)
-            {
+            if (lecture_buffer == NULL) {
                 printf("Oops! It has ocurred an error trying to make a new lecture.\n");
                 break;
             }
@@ -380,8 +366,7 @@ int main(void)
                 scanf(" %lf", &new_value);
 
                 // Corrigiendo al lectura por si se introduce una erronea
-                if (new_value < MINIMUM_CELSIUS_TEMPERATURE)
-                {
+                if (new_value < MINIMUM_CELSIUS_TEMPERATURE) {
                     new_value = MINIMUM_CELSIUS_TEMPERATURE;
                 }
                 // Generando los identificadores
@@ -392,8 +377,7 @@ int main(void)
                 lecture_buffer[n_elements_buffer - 1] = new_lecture;
 
                 Input(1, 2, &sub_option, "Desea agregar otro elemento? [ 1: Si | 2: No ]: ");
-                if (sub_option == 2)
-                    break; // Si no se agregan mas elementos, simplemente se rompe el ciclo
+                if (sub_option == 2) break; // Si no se agregan mas elementos, simplemente se rompe el ciclo
 
                 // Sino, se agrega un elemento mas con realloc()
                 lecture *aux_buffer = (lecture *)realloc(lecture_buffer, sizeof(lecture) * (n_elements_buffer + 1));
@@ -414,8 +398,7 @@ int main(void)
             // Generando alertas si la temperatura se sale de los limites
             insert_forward_alerts(&registered_alerts, lecture_buffer, n_elements_buffer, 80, 20);
 
-            if (lecture_buffer != NULL)
-                free(lecture_buffer);
+            if (lecture_buffer != NULL) free(lecture_buffer);
 
             break;
         }
